@@ -91,6 +91,11 @@ import {
     updateCustomDomain,
     updateMapEnabled,
 } from "ente-new/photos/services/settings";
+import type { SidebarActionID } from "ente-new/photos/services/search/types";
+import {
+    performSidebarAction as performSidebarRegistryAction,
+    type SidebarActionContext,
+} from "ente-new/photos/services/sidebar-search/registry";
 import {
     familyAdminEmail,
     hasExceededStorageQuota,
@@ -126,6 +131,14 @@ import { testUpload } from "../../tests/upload.test";
 import { SubscriptionCard } from "./SubscriptionCard";
 
 type SidebarProps = ModalVisibilityProps & {
+    /**
+     * Optional search-triggered sidebar action to perform.
+     */
+    pendingAction?: SidebarActionID;
+    /**
+     * Called after a pending sidebar action has been handled.
+     */
+    onActionHandled?: (actionID: SidebarActionID) => void;
     /**
      * Information about non-hidden collections and pseudo-collections.
      *
@@ -179,35 +192,184 @@ type SidebarProps = ModalVisibilityProps & {
 export const Sidebar: React.FC<SidebarProps> = ({
     open,
     onClose,
+    pendingAction,
+    onActionHandled,
     normalCollectionSummaries,
     uncategorizedCollectionSummaryID,
     onShowPlanSelector,
     onShowCollectionSummary,
     onShowExport,
     onAuthenticateUser,
-}) => (
-    <RootSidebarDrawer open={open} onClose={onClose}>
-        <HeaderSection onCloseSidebar={onClose} />
-        <UserDetailsSection sidebarOpen={open} {...{ onShowPlanSelector }} />
-        <Stack sx={{ gap: 0.5, mb: 3 }}>
-            <ShortcutSection
-                onCloseSidebar={onClose}
-                {...{
-                    normalCollectionSummaries,
-                    uncategorizedCollectionSummaryID,
-                    onShowCollectionSummary,
-                }}
-            />
-            <UtilitySection
-                onCloseSidebar={onClose}
-                {...{ onShowExport, onAuthenticateUser }}
-            />
-            <Divider sx={{ my: "2px" }} />
-            <ExitSection />
-            <InfoSection />
-        </Stack>
-    </RootSidebarDrawer>
-);
+}) => {
+    const router = useRouter();
+    const { show: showHelp, props: helpVisibilityProps } = useModalVisibility();
+    const { show: showAccount, props: accountVisibilityProps } =
+        useModalVisibility();
+    const { show: showPreferences, props: preferencesVisibilityProps } =
+        useModalVisibility();
+    const { watchFolderView, setWatchFolderView } = usePhotosAppContext();
+    const { showMiniDialog, logout } = useBaseContext();
+
+    const [pendingAccountAction, setPendingAccountAction] =
+        useState<AccountAction>();
+    const [pendingPreferencesAction, setPendingPreferencesAction] =
+        useState<PreferencesAction>();
+    const [pendingHelpAction, setPendingHelpAction] =
+        useState<HelpAction>();
+
+    const handleLogout = useCallback(
+        () =>
+            showMiniDialog({
+                message: t("logout_message"),
+                continue: {
+                    text: t("logout"),
+                    color: "critical",
+                    action: logout,
+                },
+                buttonDirection: "row",
+            }),
+        [logout, showMiniDialog],
+    );
+
+    const handleOpenUncategorizedSection = useCallback(
+        () =>
+            void onShowCollectionSummary(uncategorizedCollectionSummaryID).then(
+                onClose,
+            ),
+        [onClose, onShowCollectionSummary, uncategorizedCollectionSummaryID],
+    );
+
+    const handleOpenTrashSection = useCallback(
+        () =>
+            void onShowCollectionSummary(PseudoCollectionID.trash).then(
+                onClose,
+            ),
+        [onClose, onShowCollectionSummary],
+    );
+
+    const handleOpenArchiveSection = useCallback(
+        () =>
+            void onShowCollectionSummary(PseudoCollectionID.archiveItems).then(
+                onClose,
+            ),
+        [onClose, onShowCollectionSummary],
+    );
+
+    const handleOpenHiddenSection = useCallback(
+        () =>
+            void onShowCollectionSummary(PseudoCollectionID.hiddenItems, true)
+                // See: [Note: Workarounds for unactionable ARIA warnings]
+                .then(() => wait(10))
+                .then(onClose),
+        [onClose, onShowCollectionSummary],
+    );
+
+    const handleOpenWatchFolder = useCallback(
+        () => setWatchFolderView(true),
+        [setWatchFolderView],
+    );
+    const handleCloseWatchFolder = useCallback(
+        () => setWatchFolderView(false),
+        [setWatchFolderView],
+    );
+
+    const showCollectionSummaryWithWorkarounds = useCallback(
+        (collectionSummaryID: number, isHidden?: boolean) => {
+            const action = onShowCollectionSummary(collectionSummaryID, isHidden);
+            return isHidden ? action.then(() => wait(10)) : action;
+        },
+        [onShowCollectionSummary],
+    );
+
+    const performSidebarAction = useCallback(
+        async (actionID: SidebarActionID) =>
+            performSidebarRegistryAction(actionID, {
+                onClose,
+                onShowCollectionSummary: showCollectionSummaryWithWorkarounds,
+                showAccount,
+                showPreferences,
+                showHelp,
+                onShowExport,
+                onLogout: handleLogout,
+                onRouteToDeduplicate: () => router.push("/duplicates"),
+                onShowWatchFolder: handleOpenWatchFolder,
+                pseudoIDs: {
+                    uncategorized: uncategorizedCollectionSummaryID,
+                    archive: PseudoCollectionID.archiveItems,
+                    hidden: PseudoCollectionID.hiddenItems,
+                    trash: PseudoCollectionID.trash,
+                },
+                setPendingAccountAction: (a) =>
+                    setPendingAccountAction(a as AccountAction | undefined),
+                setPendingPreferencesAction: (a) =>
+                    setPendingPreferencesAction(a as PreferencesAction | undefined),
+                setPendingHelpAction: (a) =>
+                    setPendingHelpAction(a as HelpAction | undefined),
+            } as SidebarActionContext),
+        [
+            handleLogout,
+            handleOpenWatchFolder,
+            onClose,
+            showCollectionSummaryWithWorkarounds,
+            onShowExport,
+            router,
+            showAccount,
+            showHelp,
+            showPreferences,
+            uncategorizedCollectionSummaryID,
+        ],
+    );
+
+    useEffect(() => {
+        if (!pendingAction) return;
+        void performSidebarAction(pendingAction).finally(() =>
+            onActionHandled?.(pendingAction),
+        );
+    }, [pendingAction, performSidebarAction, onActionHandled]);
+
+    return (
+        <RootSidebarDrawer open={open} onClose={onClose}>
+            <HeaderSection onCloseSidebar={onClose} />
+            <UserDetailsSection sidebarOpen={open} {...{ onShowPlanSelector }} />
+            <Stack sx={{ gap: 0.5, mb: 3 }}>
+                <ShortcutSection
+                    onCloseSidebar={onClose}
+                    {...{
+                        normalCollectionSummaries,
+                        uncategorizedCollectionSummaryID,
+                        onShowCollectionSummary,
+                    }}
+                />
+                <UtilitySection
+                    onCloseSidebar={onClose}
+                    {...{
+                        onShowExport,
+                        onAuthenticateUser,
+                        showAccount,
+                        accountVisibilityProps,
+                        showPreferences,
+                        preferencesVisibilityProps,
+                        showHelp,
+                        helpVisibilityProps,
+                        watchFolderView,
+                        onShowWatchFolder: handleOpenWatchFolder,
+                        onCloseWatchFolder: handleCloseWatchFolder,
+                        pendingAccountAction,
+                        onAccountActionHandled: setPendingAccountAction,
+                        pendingPreferencesAction,
+                        onPreferencesActionHandled: setPendingPreferencesAction,
+                        pendingHelpAction,
+                        onHelpActionHandled: setPendingHelpAction,
+                        onRouteToDeduplicate: () => router.push("/duplicates"),
+                    }}
+                />
+                <Divider sx={{ my: "2px" }} />
+                <ExitSection onLogout={handleLogout} />
+                <InfoSection />
+            </Stack>
+        </RootSidebarDrawer>
+    );
+};
 
 const RootSidebarDrawer = styled(SidebarDrawer)(({ theme }) => ({
     "& .MuiPaper-root": { padding: theme.spacing(1.5) },
@@ -216,6 +378,37 @@ const RootSidebarDrawer = styled(SidebarDrawer)(({ theme }) => ({
 interface SectionProps {
     onCloseSidebar: SidebarProps["onClose"];
 }
+
+type AccountAction = Extract<
+    SidebarActionID,
+    | "account.recoveryKey"
+    | "account.twoFactor"
+    | "account.passkeys"
+    | "account.changePassword"
+    | "account.changeEmail"
+    | "account.deleteAccount"
+>;
+
+type PreferencesAction = Extract<
+    SidebarActionID,
+    | "preferences.language"
+    | "preferences.theme"
+    | "preferences.customDomains"
+    | "preferences.map"
+    | "preferences.advanced"
+    | "preferences.mlSearch"
+    | "preferences.streamableVideos"
+>;
+
+type HelpAction = Extract<
+    SidebarActionID,
+    | "help.helpCenter"
+    | "help.blog"
+    | "help.requestFeature"
+    | "help.support"
+    | "help.viewLogs"
+    | "help.testUpload"
+>;
 
 const HeaderSection: React.FC<SectionProps> = ({ onCloseSidebar }) => (
     <SpacedRow sx={{ mt: "6px", pl: "12px" }}>
@@ -542,29 +735,47 @@ const ShortcutSection: React.FC<ShortcutSectionProps> = ({
 };
 
 type UtilitySectionProps = SectionProps &
-    Pick<SidebarProps, "onShowExport" | "onAuthenticateUser">;
+    Pick<SidebarProps, "onShowExport" | "onAuthenticateUser"> & {
+        showAccount: () => void;
+        accountVisibilityProps: NestedSidebarDrawerVisibilityProps;
+        showPreferences: () => void;
+        preferencesVisibilityProps: NestedSidebarDrawerVisibilityProps;
+        showHelp: () => void;
+        helpVisibilityProps: NestedSidebarDrawerVisibilityProps;
+        watchFolderView: boolean;
+        onShowWatchFolder: () => void;
+        onCloseWatchFolder: () => void;
+        pendingAccountAction?: AccountAction;
+        onAccountActionHandled: (action?: AccountAction) => void;
+        pendingPreferencesAction?: PreferencesAction;
+        onPreferencesActionHandled: (action?: PreferencesAction) => void;
+        pendingHelpAction?: HelpAction;
+        onHelpActionHandled: (action?: HelpAction) => void;
+        onRouteToDeduplicate: () => void;
+    };
 
 const UtilitySection: React.FC<UtilitySectionProps> = ({
     onCloseSidebar,
     onShowExport,
     onAuthenticateUser,
+    showAccount,
+    accountVisibilityProps,
+    showPreferences,
+    preferencesVisibilityProps,
+    showHelp,
+    helpVisibilityProps,
+    watchFolderView,
+    onShowWatchFolder,
+    onCloseWatchFolder,
+    pendingAccountAction,
+    onAccountActionHandled,
+    pendingPreferencesAction,
+    onPreferencesActionHandled,
+    pendingHelpAction,
+    onHelpActionHandled,
+    onRouteToDeduplicate,
 }) => {
     const { showMiniDialog } = useBaseContext();
-    const { watchFolderView, setWatchFolderView } = usePhotosAppContext();
-
-    const router = useRouter();
-
-    const { show: showHelp, props: helpVisibilityProps } = useModalVisibility();
-
-    const { show: showAccount, props: accountVisibilityProps } =
-        useModalVisibility();
-    const { show: showPreferences, props: preferencesVisibilityProps } =
-        useModalVisibility();
-
-    const showWatchFolder = () => setWatchFolderView(true);
-    const handleCloseWatchFolder = () => setWatchFolderView(false);
-
-    const handleDeduplicate = () => router.push("/duplicates");
 
     const handleExport = () =>
         isDesktop
@@ -582,13 +793,13 @@ const UtilitySection: React.FC<UtilitySectionProps> = ({
                 <RowButton
                     variant="secondary"
                     label={t("watch_folders")}
-                    onClick={showWatchFolder}
+                    onClick={onShowWatchFolder}
                 />
             )}
             <RowButton
                 variant="secondary"
                 label={t("deduplicate_files")}
-                onClick={handleDeduplicate}
+                onClick={onRouteToDeduplicate}
             />
             <RowButton
                 variant="secondary"
@@ -610,47 +821,45 @@ const UtilitySection: React.FC<UtilitySectionProps> = ({
                 }
                 onClick={handleExport}
             />
-            <Help {...helpVisibilityProps} onRootClose={onCloseSidebar} />
+            <Help
+                {...helpVisibilityProps}
+                onRootClose={onCloseSidebar}
+                pendingAction={pendingHelpAction}
+                onActionHandled={onHelpActionHandled}
+            />
             {isDesktop && (
                 <WatchFolder
                     open={watchFolderView}
-                    onClose={handleCloseWatchFolder}
+                    onClose={onCloseWatchFolder}
                 />
             )}
             <Account
                 {...accountVisibilityProps}
                 onRootClose={onCloseSidebar}
+                pendingAction={pendingAccountAction}
+                onActionHandled={onAccountActionHandled}
                 {...{ onAuthenticateUser }}
             />
             <Preferences
                 {...preferencesVisibilityProps}
                 onRootClose={onCloseSidebar}
+                pendingAction={pendingPreferencesAction}
+                onActionHandled={onPreferencesActionHandled}
             />
         </>
     );
 };
 
-const ExitSection: React.FC = () => {
-    const { logout, showMiniDialog } = useBaseContext();
-
-    const handleLogout = () =>
-        showMiniDialog({
-            message: t("logout_message"),
-            continue: { text: t("logout"), color: "critical", action: logout },
-            buttonDirection: "row",
-        });
-
-    return (
-        <>
-            <RowButton
-                variant="secondary"
-                color="critical"
-                label={t("logout")}
-                onClick={handleLogout}
-            />
-        </>
-    );
-};
+const ExitSection: React.FC<{ onLogout: () => void }> = ({ onLogout }) => (
+    <>
+        <RowButton
+            variant="secondary"
+            color="critical"
+            label={t("logout")}
+            onClick={onLogout}
+        />
+    </>
+);
 
 const InfoSection: React.FC = () => {
     const [appVersion, setAppVersion] = useState("");
@@ -680,13 +889,18 @@ const InfoSection: React.FC = () => {
 };
 
 type AccountProps = NestedSidebarDrawerVisibilityProps &
-    Pick<SidebarProps, "onAuthenticateUser">;
+    Pick<SidebarProps, "onAuthenticateUser"> & {
+        pendingAction?: AccountAction;
+        onActionHandled?: (action?: AccountAction) => void;
+    };
 
 const Account: React.FC<AccountProps> = ({
     open,
     onClose,
     onRootClose,
     onAuthenticateUser,
+    pendingAction,
+    onActionHandled,
 }) => {
     const { showMiniDialog } = useBaseContext();
 
@@ -711,6 +925,41 @@ const Account: React.FC<AccountProps> = ({
         onRootClose();
         await openAccountsManagePasskeysPage();
     };
+
+    useEffect(() => {
+        if (!open || !pendingAction) return;
+        switch (pendingAction) {
+            case "account.recoveryKey":
+                showRecoveryKey();
+                break;
+            case "account.twoFactor":
+                showTwoFactor();
+                break;
+            case "account.passkeys":
+                void handlePasskeys();
+                break;
+            case "account.changePassword":
+                handleChangePassword();
+                break;
+            case "account.changeEmail":
+                handleChangeEmail();
+                break;
+            case "account.deleteAccount":
+                showDeleteAccount();
+                break;
+        }
+        onActionHandled?.();
+    }, [
+        handleChangeEmail,
+        handleChangePassword,
+        handlePasskeys,
+        open,
+        onActionHandled,
+        pendingAction,
+        showDeleteAccount,
+        showRecoveryKey,
+        showTwoFactor,
+    ]);
 
     return (
         <TitledNestedSidebarDrawer
@@ -773,10 +1022,17 @@ const Account: React.FC<AccountProps> = ({
     );
 };
 
-const Preferences: React.FC<NestedSidebarDrawerVisibilityProps> = ({
+type PreferencesProps = NestedSidebarDrawerVisibilityProps & {
+    pendingAction?: PreferencesAction;
+    onActionHandled?: (action?: PreferencesAction) => void;
+};
+
+const Preferences: React.FC<PreferencesProps> = ({
     open,
     onClose,
     onRootClose,
+    pendingAction,
+    onActionHandled,
 }) => {
     const { show: showDomainSettings, props: domainSettingsVisibilityProps } =
         useModalVisibility();
@@ -795,6 +1051,37 @@ const Preferences: React.FC<NestedSidebarDrawerVisibilityProps> = ({
     useEffect(() => {
         if (open) void pullSettings();
     }, [open]);
+
+    useEffect(() => {
+        if (!open || !pendingAction) return;
+        switch (pendingAction) {
+            case "preferences.customDomains":
+                showDomainSettings();
+                break;
+            case "preferences.map":
+                showMapSettings();
+                break;
+            case "preferences.advanced":
+                showAdvancedSettings();
+                break;
+            case "preferences.mlSearch":
+                showMLSettings();
+                break;
+            case "preferences.language":
+            case "preferences.theme":
+            case "preferences.streamableVideos":
+                break;
+        }
+        onActionHandled?.();
+    }, [
+        open,
+        onActionHandled,
+        pendingAction,
+        showAdvancedSettings,
+        showDomainSettings,
+        showMLSettings,
+        showMapSettings,
+    ]);
 
     const handleRootClose = () => {
         onClose();
@@ -1271,10 +1558,17 @@ const AdvancedSettings: React.FC<NestedSidebarDrawerVisibilityProps> = ({
     );
 };
 
-const Help: React.FC<NestedSidebarDrawerVisibilityProps> = ({
+type HelpProps = NestedSidebarDrawerVisibilityProps & {
+    pendingAction?: HelpAction;
+    onActionHandled?: (action?: HelpAction) => void;
+};
+
+const Help: React.FC<HelpProps> = ({
     open,
     onClose,
     onRootClose,
+    pendingAction,
+    onActionHandled,
 }) => {
     const { showMiniDialog } = useBaseContext();
 
@@ -1308,6 +1602,42 @@ const Help: React.FC<NestedSidebarDrawerVisibilityProps> = ({
             saveStringAsFile(savedLogs(), `ente-web-logs-${Date.now()}.txt`);
         }
     };
+
+    useEffect(() => {
+        if (!open || !pendingAction) return;
+        switch (pendingAction) {
+            case "help.helpCenter":
+                handleHelp();
+                break;
+            case "help.blog":
+                handleBlog();
+                break;
+            case "help.requestFeature":
+                handleRequestFeature();
+                break;
+            case "help.support":
+                handleSupport();
+                break;
+            case "help.viewLogs":
+                confirmViewLogs();
+                break;
+            case "help.testUpload":
+                if (isDevBuildAndUser()) {
+                    void testUpload();
+                }
+                break;
+        }
+        onActionHandled?.();
+    }, [
+        confirmViewLogs,
+        handleBlog,
+        handleHelp,
+        handleRequestFeature,
+        handleSupport,
+        open,
+        onActionHandled,
+        pendingAction,
+    ]);
 
     return (
         <TitledNestedSidebarDrawer

@@ -10,6 +10,38 @@ import { FileType } from "ente-media/file-type";
 import type { Person } from "ente-new/photos/services/ml/people";
 import type { LocationTag } from "../user-entity";
 
+export type SidebarActionID =
+    | "shortcuts.uncategorized"
+    | "shortcuts.archive"
+    | "shortcuts.hidden"
+    | "shortcuts.trash"
+    | "utility.account"
+    | "utility.watchFolders"
+    | "utility.deduplicate"
+    | "utility.preferences"
+    | "utility.help"
+    | "utility.export"
+    | "utility.logout"
+    | "account.recoveryKey"
+    | "account.twoFactor"
+    | "account.passkeys"
+    | "account.changePassword"
+    | "account.changeEmail"
+    | "account.deleteAccount"
+    | "preferences.language"
+    | "preferences.theme"
+    | "preferences.customDomains"
+    | "preferences.map"
+    | "preferences.advanced"
+    | "preferences.mlSearch"
+    | "preferences.streamableVideos"
+    | "help.helpCenter"
+    | "help.blog"
+    | "help.requestFeature"
+    | "help.support"
+    | "help.viewLogs"
+    | "help.testUpload";
+
 /**
  * A search suggestion.
  *
@@ -26,6 +58,7 @@ export type SearchSuggestion = { label: string } & (
     | { type: "city"; city: City }
     | { type: "clip"; clipScoreForFileID: Map<number, number> }
     | { type: "person"; person: Person }
+    | { type: "sidebarAction"; actionID: SidebarActionID; path: string[] }
 );
 
 /**
