@@ -1,3 +1,4 @@
+import { Box } from "@mui/material";
 import { VerifyMasterPasswordForm } from "ente-accounts/components/VerifyMasterPasswordForm";
 import { checkSessionValidity } from "ente-accounts/services/session";
 import {
@@ -10,6 +11,7 @@ import {
     TitledMiniDialog,
     type MiniDialogAttributes,
 } from "ente-base/components/MiniDialog";
+import { DialogCloseIconButton } from "ente-base/components/mui/DialogCloseIconButton";
 import type { ModalVisibilityProps } from "ente-base/components/utils/modal";
 import { useBaseContext } from "ente-base/context";
 import log from "ente-base/log";
@@ -38,7 +40,19 @@ export const AuthenticateUser: React.FC<AuthenticateUserProps> = ({
         open={open}
         onClose={onClose}
         sx={{ position: "absolute" }}
-        title={t("password")}
+        title={
+            <Box
+                sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 1,
+                }}
+            >
+                {t("password")}
+                <DialogCloseIconButton onClose={onClose} />
+            </Box>
+        }
     >
         <AuthenticateUserDialogContents {...{ open, onClose }} {...rest} />
     </TitledMiniDialog>
