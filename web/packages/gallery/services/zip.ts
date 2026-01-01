@@ -10,20 +10,21 @@ import { wait } from "ente-utils/promise";
 import { Zip, ZipPassThrough } from "fflate";
 
 /**
- * Replace invalid filesystem characters (\ / : * ? " < > |) with underscores.
+ * Create a sanitized ZIP filename from a title.
+ *
+ * Sanitizes the title by replacing invalid filesystem characters
+ * (\ / : * ? " < > |) with underscores, trims whitespace, strips any existing
+ * .zip extension, defaults to "ente-download" if empty, optionally appends a
+ * part number suffix, and adds the .zip extension.
+ *
+ * @param title The title to use as the base filename.
+ * @param part Optional part number for multi-part ZIPs (e.g., "photos-part2.zip").
  */
-export const sanitizeZipFileName = (name: string) =>
-    name.replace(/[\\/:*?"<>|]/g, "_").trim() || "ente-download";
-
-/** Sanitize title and strip any existing .zip extension. */
-export const baseZipName = (title: string) =>
-    sanitizeZipFileName(title).replace(/\.zip$/i, "");
-
-/** Generate ZIP filename, optionally with part number (e.g., "photos-part2.zip"). */
-export const zipFileName = (title: string, part?: number) => {
-    const base = baseZipName(title);
-    const nameWithPart = part ? `${base}-part${part}` : base;
-    return `${nameWithPart}.zip`;
+export const createZipFileName = (title: string, part?: number) => {
+    const base = (
+        title.replace(/[\\/:*?"<>|]/g, "_").trim() || "ente-download"
+    ).replace(/\.zip$/i, "");
+    return part ? `${base}-part${part}.zip` : `${base}.zip`;
 };
 
 // ============================================================================
@@ -31,7 +32,12 @@ export const zipFileName = (title: string, part?: number) => {
 // ============================================================================
 
 /**
- * Type augmentation for File System Access API (Chrome/Edge 86+).
+ * Type augmentation for the File System Access API (Chrome/Edge 86+).
+ *
+ * This `declare global` block extends TypeScript's built-in Window interface
+ * to include `showSaveFilePicker`, which is not part of the standard DOM types
+ * because it's only supported in Chromium-based browsers. Without this, TS
+ * would error when we call `window.showSaveFilePicker`.
  */
 declare global {
     interface Window {
@@ -365,7 +371,7 @@ export const streamFilesToZip = async ({
     onFileSuccess,
     onFileFailure,
 }: StreamingZipOptions): Promise<StreamingZipResult> => {
-    const zipName = zipFileName(title);
+    const zipName = createZipFileName(title);
     const handle = writable ?? (await getWritableStreamForZip(zipName));
 
     if (handle === null) return "cancelled";

@@ -19,9 +19,9 @@ import type {
 import type { WritableStreamHandle } from "./zip";
 import {
     createNativeZipWritable,
+    createZipFileName,
     getWritableStreamForZip,
     streamFilesToZip,
-    zipFileName,
 } from "./zip";
 
 /**
@@ -112,7 +112,7 @@ const downloadAndSave = async (
     // so we only show the notification after user confirms the location.
     let preObtainedWritable: WritableStreamHandle | undefined;
     if (!electron && files.length > 1) {
-        const zipName = zipFileName(title);
+        const zipName = createZipFileName(title);
         const handle = await getWritableStreamForZip(zipName);
         if (handle === null) {
             // User cancelled the file picker
@@ -167,7 +167,7 @@ const downloadAndSave = async (
                 if (electron && downloadDirPath) {
                     const zipExportName = await safeFileName(
                         downloadDirPath,
-                        zipFileName(zipTitle),
+                        createZipFileName(zipTitle),
                         electron.fs.exists,
                     );
                     const zipPath = joinPath(downloadDirPath, zipExportName);
@@ -179,7 +179,7 @@ const downloadAndSave = async (
 
                 // For retries on web, we need to get a new writable handle
                 if (!electron && retryAttempt > 0) {
-                    const retryZipName = zipFileName(zipTitle);
+                    const retryZipName = createZipFileName(zipTitle);
                     const handle = await getWritableStreamForZip(retryZipName);
                     if (handle === null) {
                         // User cancelled retry file picker
