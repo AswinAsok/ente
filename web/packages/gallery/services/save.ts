@@ -108,17 +108,13 @@ const downloadAndSave = async (
         }
     }
 
-    // For web streaming ZIP, get the writable handle first (shows file picker)
-    // so we only show the notification after user confirms the location.
+    // For web streaming ZIP, acquire the StreamSaver handle up front so we
+    // can fall back to individual downloads before showing the notification.
     let preObtainedWritable: WritableStreamHandle | undefined;
     if (!electron && files.length > 1) {
         const zipName = createZipFileName(title);
         const handle = await getWritableStreamForZip(zipName);
-        if (handle === null) {
-            // User cancelled the file picker
-            return;
-        }
-        if (handle === undefined) {
+        if (!handle) {
             // Streaming unavailable, will fall back to individual downloads
             log.info(
                 "Streaming ZIP unavailable, will use individual downloads",
@@ -181,11 +177,6 @@ const downloadAndSave = async (
                 if (!electron && retryAttempt > 0) {
                     const retryZipName = createZipFileName(zipTitle);
                     const handle = await getWritableStreamForZip(retryZipName);
-                    if (handle === null) {
-                        // User cancelled retry file picker
-                        canceller.abort();
-                        return;
-                    }
                     if (handle) {
                         writableOverride = handle;
                     }

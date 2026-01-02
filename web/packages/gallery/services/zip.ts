@@ -32,26 +32,6 @@ export const createZipFileName = (title: string, part?: number) => {
 // ============================================================================
 
 /**
- * Type augmentation for the File System Access API (Chrome/Edge 86+).
- *
- * This `declare global` block extends TypeScript's built-in Window interface
- * to include `showSaveFilePicker`, which is not part of the standard DOM types
- * because it's only supported in Chromium-based browsers. Without this, TS
- * would error when we call `window.showSaveFilePicker`.
- */
-declare global {
-    interface Window {
-        showSaveFilePicker?: (
-            options?: SaveFilePickerOptions,
-        ) => Promise<FileSystemFileHandle>;
-    }
-    interface SaveFilePickerOptions {
-        suggestedName?: string;
-        types?: { description?: string; accept: Record<string, string[]> }[];
-    }
-}
-
-/**
  * Handle for managing a writable stream during ZIP creation.
  * Abstracts writable stream implementations (browser FS API or native).
  */
@@ -64,43 +44,68 @@ export interface WritableStreamHandle {
     abort: () => void;
 }
 
+// MITM helper page required by StreamSaver; allow override for self-hosting.
+const STREAM_SAVER_MITM_URL =
+    process.env.NEXT_PUBLIC_STREAMSAVER_MITM ?? "/streamsaver/mitm.html";
+
 /**
- * Get a writable stream for ZIP file. Tries File System Access API first,
- * returns null if cancelled, undefined if unavailable.
+ * Get a writable stream for ZIP file using StreamSaver.
+ * Returns undefined if streaming is unavailable in the environment.
  */
 export const getWritableStreamForZip = async (
     fileName: string,
-): Promise<WritableStreamHandle | null | undefined> => {
+): Promise<WritableStreamHandle | undefined> => {
     if (typeof window === "undefined") return undefined;
+    if (typeof WritableStream === "undefined") return undefined;
+    if (!("serviceWorker" in navigator)) return undefined;
 
-    // Try File System Access API first (Chrome/Edge)
-    if (window.showSaveFilePicker) {
-        try {
-            const fileHandle = await window.showSaveFilePicker({
-                suggestedName: fileName,
-                types: [
-                    {
-                        description: "ZIP Archive",
-                        accept: { "application/zip": [".zip"] },
-                    },
-                ],
-            });
-            const writable = await fileHandle.createWritable();
-            return {
-                stream: writable,
-                close: () => writable.close(),
-                abort: () => void writable.abort(),
-            };
-        } catch (e) {
-            // User cancelled the picker
-            if (e instanceof DOMException && e.name === "AbortError") {
-                return null;
-            }
-            log.warn("File System Access API failed", e);
-        }
+    try {
+        const streamSaver = (await import("streamsaver")).default as {
+            createWriteStream: (name: string) => WritableStream<Uint8Array>;
+            mitm?: string;
+            WritableStream?: typeof WritableStream;
+            supportsTransferable?: boolean;
+        };
+
+        streamSaver.mitm = streamSaver.mitm || STREAM_SAVER_MITM_URL;
+        streamSaver.WritableStream =
+            streamSaver.WritableStream ?? WritableStream;
+
+        const fileStream = streamSaver.createWriteStream(fileName);
+        const writer = fileStream.getWriter();
+        let closed = false;
+
+        const wrappedStream = new WritableStream<Uint8Array>({
+            write: (chunk) => writer.write(chunk),
+            close: async () => {
+                if (closed) return;
+                closed = true;
+                await writer.close();
+            },
+            abort: async () => {
+                if (closed) return;
+                closed = true;
+                await writer.abort();
+            },
+        });
+
+        return {
+            stream: wrappedStream,
+            close: async () => {
+                if (closed) return;
+                closed = true;
+                await writer.close();
+            },
+            abort: () => {
+                if (closed) return;
+                closed = true;
+                void writer.abort().catch(() => undefined);
+            },
+        };
+    } catch (e) {
+        log.warn("StreamSaver unavailable for ZIP streaming", e);
+        return undefined;
     }
-
-    return undefined;
 };
 
 /** Options for {@link streamFilesToZip}. */
@@ -133,48 +138,164 @@ const STREAM_ZIP_CONCURRENCY_REFRESH_MS = 600;
 const STREAM_ZIP_BASE_WRITE_QUEUE_LIMIT = 24;
 /** Base retry delay (multiplied by attempt number for backoff). */
 const STREAM_ZIP_RETRY_DELAY_MS = 400;
+const STREAM_ZIP_BYTES_PER_MB = 1024 * 1024;
+const STREAM_ZIP_BYTES_PER_GB = STREAM_ZIP_BYTES_PER_MB * 1024;
+
+const clampConcurrency = (value: number) =>
+    Math.max(
+        STREAM_ZIP_MIN_CONCURRENCY,
+        Math.min(value, STREAM_ZIP_MAX_CONCURRENCY),
+    );
+
+interface MeasureUserAgentSpecificMemoryResult {
+    bytes: number;
+    breakdown: {
+        bytes: number;
+        attribution: { url: string; scope?: string }[];
+        types: string[];
+    }[];
+}
+
+type MeasureUserAgentSpecificMemory =
+    () => Promise<MeasureUserAgentSpecificMemoryResult>;
+
+let pendingMemoryMeasurement: Promise<MeasureUserAgentSpecificMemoryResult | null> | null =
+    null;
+let lastMemoryMeasurement: MeasureUserAgentSpecificMemoryResult | null = null;
+let lastMemoryMeasurementAt = 0;
+let lastLoggedConcurrency: {
+    value: number;
+    method: string;
+    detectedValue: string | number | undefined;
+} | null = null;
+
+const measureUserAgentMemory = async () => {
+    const measureMemory = (
+        performance as Performance & {
+            measureUserAgentSpecificMemory?: MeasureUserAgentSpecificMemory;
+        }
+    ).measureUserAgentSpecificMemory;
+    if (typeof measureMemory !== "function") return null;
+
+    const now = Date.now();
+    if (
+        lastMemoryMeasurement &&
+        now - lastMemoryMeasurementAt < STREAM_ZIP_CONCURRENCY_REFRESH_MS
+    ) {
+        return lastMemoryMeasurement;
+    }
+
+    if (pendingMemoryMeasurement) return pendingMemoryMeasurement;
+
+    try {
+        pendingMemoryMeasurement = measureMemory.call(performance)
+            .then((result) => {
+                lastMemoryMeasurement = result;
+                lastMemoryMeasurementAt = Date.now();
+                return result;
+            })
+            .catch((e) => {
+                log.warn("measureUserAgentSpecificMemory failed", e);
+                return null;
+            })
+            .finally(() => {
+                pendingMemoryMeasurement = null;
+            });
+    } catch (e) {
+        log.warn("measureUserAgentSpecificMemory failed", e);
+        pendingMemoryMeasurement = null;
+        return null;
+    }
+
+    return pendingMemoryMeasurement;
+};
+
+const concurrencyFromFreeBytes = (freeBytes: number) => {
+    if (freeBytes > 4000 * STREAM_ZIP_BYTES_PER_MB) return clampConcurrency(24);
+    if (freeBytes > 3000 * STREAM_ZIP_BYTES_PER_MB) return clampConcurrency(20);
+    if (freeBytes > 2000 * STREAM_ZIP_BYTES_PER_MB) return clampConcurrency(16);
+    if (freeBytes > 1200 * STREAM_ZIP_BYTES_PER_MB) return clampConcurrency(12);
+    if (freeBytes > 800 * STREAM_ZIP_BYTES_PER_MB) return clampConcurrency(10);
+    if (freeBytes > 400 * STREAM_ZIP_BYTES_PER_MB) return clampConcurrency(6);
+    if (freeBytes > 200 * STREAM_ZIP_BYTES_PER_MB) return clampConcurrency(4);
+    return clampConcurrency(2);
+};
+
+const applyUsageCaps = (base: number, usedBytes: number) => {
+    const usedMB = usedBytes / STREAM_ZIP_BYTES_PER_MB;
+    if (usedMB > 2500) return clampConcurrency(Math.min(base, 2));
+    if (usedMB > 1800) return clampConcurrency(Math.min(base, 4));
+    if (usedMB > 1200) return clampConcurrency(Math.min(base, 6));
+    if (usedMB > 800) return clampConcurrency(Math.min(base, 8));
+    if (usedMB > 500) return clampConcurrency(Math.min(base, 10));
+    return clampConcurrency(base);
+};
+
+const logZipConcurrency = (
+    concurrency: number,
+    method: string,
+    detectedValue: string | number = "none",
+) => {
+    if (
+        lastLoggedConcurrency &&
+        lastLoggedConcurrency.value === concurrency &&
+        lastLoggedConcurrency.method === method &&
+        lastLoggedConcurrency.detectedValue === detectedValue
+    )
+        return;
+    lastLoggedConcurrency = { value: concurrency, method, detectedValue };
+    const detail =
+        detectedValue === "none" ? method : `${method}: ${detectedValue}`;
+    log.info(`ZIP concurrency: ${concurrency} (${detail})`);
+};
 
 /**
  * Determine optimal concurrency based on available memory.
- * Uses performance.memory (Chrome) or navigator.deviceMemory, defaults to 4.
+ * Prefers measureUserAgentSpecificMemory() with deviceMemory to estimate free
+ * memory, falls back to hardwareConcurrency, defaults to 4.
  *
  * Note: navigator.deviceMemory is capped at 8 GB max by browsers for privacy.
  */
-const getStreamZipConcurrency = () => {
+const getStreamZipConcurrency = async (): Promise<number> => {
     let method = "default";
     let detectedValue: number | string = "none";
     let concurrency = 4;
 
     try {
-        // Chrome provides heap info; use jsHeapSizeLimit for actual available memory.
-        const memory = (
-            performance as Performance & {
-                memory?: { usedJSHeapSize: number; jsHeapSizeLimit: number };
+        const memoryResult = await measureUserAgentMemory();
+        const deviceMemory = (
+            navigator as Navigator & { deviceMemory?: number }
+        ).deviceMemory;
+
+        if (memoryResult) {
+            const usedBytes = Math.max(0, memoryResult.bytes);
+            if (deviceMemory) {
+                const freeBytes = Math.max(
+                    0,
+                    deviceMemory * STREAM_ZIP_BYTES_PER_GB - usedBytes,
+                );
+                method = "measureUserAgentSpecificMemory";
+                detectedValue = `${Math.round(
+                    freeBytes / STREAM_ZIP_BYTES_PER_MB,
+                )} MB est free`;
+                concurrency = concurrencyFromFreeBytes(freeBytes);
+                logZipConcurrency(concurrency, method, detectedValue);
+                return concurrency;
             }
-        ).memory;
-        if (memory?.jsHeapSizeLimit && memory.usedJSHeapSize >= 0) {
-            const free = memory.jsHeapSizeLimit - memory.usedJSHeapSize;
-            const freeMB = Math.round(free / (1024 * 1024));
-            method = "performance.memory";
-            detectedValue = `${freeMB} MB free`;
-            if (free > 4000 * 1024 * 1024)
-                concurrency = 24; // >4 GB free
-            else if (free > 3000 * 1024 * 1024)
-                concurrency = 20; // >3 GB free
-            else if (free > 2000 * 1024 * 1024)
-                concurrency = 16; // >2 GB free
-            else if (free > 1200 * 1024 * 1024)
-                concurrency = 12; // >1.2 GB free
-            else if (free > 800 * 1024 * 1024)
-                concurrency = 10; // >800 MB free
-            else if (free > 400 * 1024 * 1024)
-                concurrency = 6; // >400 MB free
-            else if (free > 200 * 1024 * 1024)
-                concurrency = 4; // >200 MB free
-            else concurrency = 2; // constrained
-            log.info(
-                `ZIP concurrency: ${concurrency} (${method}: ${detectedValue})`,
-            );
+
+            method = "measureUserAgentSpecificMemory";
+            detectedValue = `${Math.round(
+                usedBytes / STREAM_ZIP_BYTES_PER_MB,
+            )} MB used`;
+            const cores = navigator.hardwareConcurrency;
+            const baseFromCores = cores
+                ? Math.max(
+                      STREAM_ZIP_MIN_CONCURRENCY,
+                      Math.min(STREAM_ZIP_MAX_CONCURRENCY, cores * 2),
+                  )
+                : concurrency;
+            concurrency = applyUsageCaps(baseFromCores, usedBytes);
+            logZipConcurrency(concurrency, method, detectedValue);
             return concurrency;
         }
 
@@ -188,16 +309,14 @@ const getStreamZipConcurrency = () => {
                 STREAM_ZIP_MAX_CONCURRENCY,
                 Math.max(STREAM_ZIP_MIN_CONCURRENCY, cores * 2),
             );
-            log.info(
-                `ZIP concurrency: ${concurrency} (${method}: ${detectedValue})`,
-            );
+            logZipConcurrency(concurrency, method, detectedValue);
             return concurrency;
         }
     } catch (e) {
         log.warn("Failed to detect memory for ZIP concurrency", e);
     }
 
-    log.info(`ZIP concurrency: ${concurrency} (${method})`);
+    logZipConcurrency(concurrency, method, detectedValue);
     return concurrency;
 };
 
@@ -374,7 +493,6 @@ export const streamFilesToZip = async ({
     const zipName = createZipFileName(title);
     const handle = writable ?? (await getWritableStreamForZip(zipName));
 
-    if (handle === null) return "cancelled";
     if (!handle) return "unavailable";
 
     const { stream } = handle;
@@ -563,13 +681,8 @@ export const streamFilesToZip = async ({
     };
 
     const preparedPromises: Promise<PreparedFile | null>[] = [];
-    const clampConcurrency = (value: number) =>
-        Math.max(
-            STREAM_ZIP_MIN_CONCURRENCY,
-            Math.min(value, STREAM_ZIP_MAX_CONCURRENCY),
-        );
 
-    let targetConcurrency = clampConcurrency(getStreamZipConcurrency());
+    let targetConcurrency = clampConcurrency(await getStreamZipConcurrency());
     let lastConcurrencyCheck = 0;
     let concurrencyCheckTimer: ReturnType<typeof setInterval> | undefined;
 
@@ -580,7 +693,7 @@ export const streamFilesToZip = async ({
         }
     };
 
-    const refreshConcurrency = (force = false) => {
+    const refreshConcurrency = async (force = false) => {
         const now = Date.now();
         if (
             !force &&
@@ -588,20 +701,19 @@ export const streamFilesToZip = async ({
         )
             return targetConcurrency;
         lastConcurrencyCheck = now;
-        const next = clampConcurrency(getStreamZipConcurrency());
+        const next = clampConcurrency(await getStreamZipConcurrency());
         if (next !== targetConcurrency) {
             targetConcurrency = next;
-            scheduleNext();
+            void scheduleNext();
         }
         return targetConcurrency;
     };
 
     const startConcurrencyRefresh = () => {
         if (typeof setInterval !== "function") return;
-        concurrencyCheckTimer = setInterval(
-            () => refreshConcurrency(true),
-            STREAM_ZIP_CONCURRENCY_REFRESH_MS,
-        );
+        concurrencyCheckTimer = setInterval(() => {
+            void refreshConcurrency(true);
+        }, STREAM_ZIP_CONCURRENCY_REFRESH_MS);
     };
 
     let nextToSchedule = 0;
@@ -609,7 +721,7 @@ export const streamFilesToZip = async ({
 
     /** Schedule next file prep if under concurrency limit. */
     const scheduleNext = () => {
-        const allowed = refreshConcurrency();
+        const allowed = targetConcurrency;
         while (nextToSchedule < files.length && active < allowed) {
             const index = nextToSchedule++;
             const file = files[index]!;
@@ -623,7 +735,7 @@ export const streamFilesToZip = async ({
     };
 
     startConcurrencyRefresh();
-    scheduleNext();
+    void scheduleNext();
 
     let lastCompletedIndex = -1;
 
