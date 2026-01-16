@@ -100,6 +100,7 @@ interface FavoritesState {
 interface MapDataResult extends MapDataState {
     removeFiles: (fileIDs: number[]) => void;
     updateFileVisibility: (file: EnteFile, visibility: ItemVisibility) => void;
+    addThumbnails: (newThumbs: Map<number, string>) => void;
 }
 
 /**
@@ -192,39 +193,6 @@ function useMapData(
         fileCount: number;
     } | null>(null);
 
-    const loadAllThumbs = useCallback(
-        async (points: JourneyPoint[], files: EnteFile[]) => {
-            // Build a Map for O(1) file lookup instead of O(n) find
-            const filesById = new Map(files.map((f) => [f.id, f]));
-
-            const entries = await Promise.all(
-                points.map(async (p) => {
-                    if (p.image) return [p.fileId, p.image] as const;
-                    const file = filesById.get(p.fileId);
-                    if (!file) return [p.fileId, undefined] as const;
-                    try {
-                        const thumb =
-                            await downloadManager.renderableThumbnailURL(file);
-                        return [p.fileId, thumb] as const;
-                    } catch {
-                        return [p.fileId, undefined] as const;
-                    }
-                }),
-            );
-
-            setState((prev) => ({
-                ...prev,
-                thumbByFileID: new Map(
-                    entries.filter(([, t]) => t !== undefined) as [
-                        number,
-                        string,
-                    ][],
-                ),
-            }));
-        },
-        [],
-    );
-
     // Clear loaded ref when dialog closes so we reload fresh data next time.
     useEffect(() => {
         if (!open) {
@@ -289,7 +257,6 @@ function useMapData(
                         fileCount: currentFileCount,
                     };
 
-                    void loadAllThumbs(pointsWithThumbs, files);
                     return;
                 }
 
@@ -327,13 +294,7 @@ function useMapData(
         };
 
         void loadMapData();
-    }, [
-        open,
-        collectionSummary,
-        activeCollection,
-        onGenericError,
-        loadAllThumbs,
-    ]);
+    }, [open, collectionSummary, activeCollection, onGenericError]);
 
     const removeFiles = useCallback((fileIDs: number[]) => {
         if (!fileIDs.length) return;
@@ -381,7 +342,16 @@ function useMapData(
         [],
     );
 
-    return { ...state, removeFiles, updateFileVisibility };
+    const addThumbnails = useCallback((newThumbs: Map<number, string>) => {
+        if (newThumbs.size === 0) return;
+        setState((prev) => {
+            const merged = new Map(prev.thumbByFileID);
+            newThumbs.forEach((thumb, fileId) => merged.set(fileId, thumb));
+            return { ...prev, thumbByFileID: merged };
+        });
+    }, []);
+
+    return { ...state, removeFiles, updateFileVisibility, addThumbnails };
 }
 
 /**
@@ -512,6 +482,68 @@ function useVisiblePhotos() {
     const [visiblePhotos, setVisiblePhotos] = useState<JourneyPoint[]>([]);
 
     return { visiblePhotos, setVisiblePhotos };
+}
+
+/**
+ * Loads thumbnails on-demand for visible photos when zoomed in enough
+ * that clusters have expanded to individual markers.
+ */
+function useViewportThumbnailLoader(
+    visiblePhotos: JourneyPoint[],
+    filesByID: Map<number, EnteFile>,
+    thumbByFileID: Map<number, string>,
+    zoomLevel: number,
+    addThumbnails: (newThumbs: Map<number, string>) => void,
+) {
+    const loadedFileIdsRef = useRef<Set<number>>(new Set());
+    const loadingRef = useRef(false);
+
+    useEffect(() => {
+        // Only load when zoomed in enough (clusters expanded)
+        const MIN_ZOOM_FOR_INDIVIDUAL_MARKERS = 12;
+        if (zoomLevel < MIN_ZOOM_FOR_INDIVIDUAL_MARKERS) return;
+        if (loadingRef.current) return;
+
+        const photosNeedingThumbs = visiblePhotos.filter((photo) => {
+            const hasThumb = photo.image || thumbByFileID.has(photo.fileId);
+            const alreadyLoaded = loadedFileIdsRef.current.has(photo.fileId);
+            return !hasThumb && !alreadyLoaded && filesByID.has(photo.fileId);
+        });
+
+        if (photosNeedingThumbs.length === 0) return;
+
+        loadingRef.current = true;
+
+        const loadBatch = async () => {
+            const BATCH_SIZE = 10;
+            for (let i = 0; i < photosNeedingThumbs.length; i += BATCH_SIZE) {
+                const batch = photosNeedingThumbs.slice(i, i + BATCH_SIZE);
+                const newThumbs = new Map<number, string>();
+
+                await Promise.all(
+                    batch.map(async (photo) => {
+                        const file = filesByID.get(photo.fileId);
+                        if (!file) return;
+                        loadedFileIdsRef.current.add(photo.fileId);
+                        try {
+                            const thumb =
+                                await downloadManager.renderableThumbnailURL(
+                                    file,
+                                );
+                            if (thumb) newThumbs.set(photo.fileId, thumb);
+                        } catch {
+                            /* ignore */
+                        }
+                    }),
+                );
+
+                if (newThumbs.size > 0) addThumbnails(newThumbs);
+            }
+            loadingRef.current = false;
+        };
+
+        void loadBatch();
+    }, [visiblePhotos, zoomLevel, filesByID, thumbByFileID, addThumbnails]);
 }
 
 /**
@@ -859,9 +891,29 @@ export const CollectionMapDialog: React.FC<CollectionMapDialogProps> = ({
         error,
         removeFiles: removeFilesFromMap,
         updateFileVisibility,
+        addThumbnails,
     } = useMapData(open, collectionSummary, activeCollection, onGenericError);
 
     const { visiblePhotos, setVisiblePhotos } = useVisiblePhotos();
+    const [zoomLevel, setZoomLevel] = useState(optimalZoom);
+
+    // Handler that updates both visible photos and zoom level
+    const handleVisiblePhotosChange = useCallback(
+        (photos: JourneyPoint[], zoom: number) => {
+            setVisiblePhotos(photos);
+            setZoomLevel(zoom);
+        },
+        [setVisiblePhotos],
+    );
+
+    // Load thumbnails on-demand when zoomed in and photos become visible
+    useViewportThumbnailLoader(
+        visiblePhotos,
+        filesByID,
+        thumbByFileID,
+        zoomLevel,
+        addThumbnails,
+    );
 
     const {
         favoriteFileIDs,
@@ -993,7 +1045,7 @@ export const CollectionMapDialog: React.FC<CollectionMapDialogProps> = ({
                 optimalZoom={optimalZoom}
                 createClusterCustomIcon={createClusterCustomIcon}
                 onClose={onClose}
-                onVisiblePhotosChange={setVisiblePhotos}
+                onVisiblePhotosChange={handleVisiblePhotosChange}
                 user={user}
                 favoriteFileIDs={favoriteFileIDs}
                 pendingFavoriteUpdates={pendingFavoriteUpdates}
@@ -1038,7 +1090,7 @@ export const CollectionMapDialog: React.FC<CollectionMapDialogProps> = ({
         onRemoteFilesPull,
         pendingFavoriteUpdates,
         pendingVisibilityUpdates,
-        setVisiblePhotos,
+        handleVisiblePhotosChange,
         collectionNameByID,
         fileNormalCollectionIDs,
         handleMarkTempDeleted,
@@ -1104,7 +1156,10 @@ interface MapLayoutProps {
     optimalZoom: number;
     createClusterCustomIcon: (cluster: unknown) => unknown;
     onClose: () => void;
-    onVisiblePhotosChange: (photosInView: JourneyPoint[]) => void;
+    onVisiblePhotosChange: (
+        photosInView: JourneyPoint[],
+        zoomLevel: number,
+    ) => void;
     user: ReturnType<typeof useCurrentUser>;
     favoriteFileIDs: Set<number>;
     pendingFavoriteUpdates: Set<number>;
@@ -1466,7 +1521,10 @@ interface MapCanvasProps {
     optimalZoom: number;
     thumbByFileID: Map<number, string>;
     createClusterCustomIcon: (cluster: unknown) => unknown;
-    onVisiblePhotosChange: (photosInView: JourneyPoint[]) => void;
+    onVisiblePhotosChange: (
+        photosInView: JourneyPoint[],
+        zoomLevel: number,
+    ) => void;
 }
 
 const MapCanvas = React.memo(function MapCanvas({
@@ -1722,7 +1780,10 @@ const AttributionPopup = styled(Box)(({ theme }) => ({
 interface MapViewportListenerProps {
     useMap: typeof import("react-leaflet").useMap;
     photos: JourneyPoint[];
-    onVisiblePhotosChange: (photosInView: JourneyPoint[]) => void;
+    onVisiblePhotosChange: (
+        photosInView: JourneyPoint[],
+        zoomLevel: number,
+    ) => void;
 }
 
 function MapViewportListener({
@@ -1762,18 +1823,24 @@ function MapViewportListener({
 
         previousVisibleIdsRef.current = currentIds;
         previousClusterCountRef.current = clusterCount;
-        onVisiblePhotosChange(inView);
+        onVisiblePhotosChange(inView, map.getZoom());
     }, [getClusterCount, map, onVisiblePhotosChange, photos]);
 
     useEffect(() => {
         if (!photos.length) {
             previousVisibleIdsRef.current = new Set();
             previousClusterCountRef.current = getClusterCount();
-            onVisiblePhotosChange([]);
+            onVisiblePhotosChange([], map.getZoom());
             return;
         }
         updateVisiblePhotos();
-    }, [getClusterCount, photos, onVisiblePhotosChange, updateVisiblePhotos]);
+    }, [
+        getClusterCount,
+        map,
+        photos,
+        onVisiblePhotosChange,
+        updateVisiblePhotos,
+    ]);
 
     useEffect(() => {
         map.on("moveend", updateVisiblePhotos);
