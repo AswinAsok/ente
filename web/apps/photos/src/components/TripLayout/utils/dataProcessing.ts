@@ -128,6 +128,8 @@ export const fetchLocationNames = async ({
 export interface GenerateThumbnailsParams {
     photoClusters: JourneyPoint[][];
     files: EnteFile[];
+    existingThumbnails?: Map<number, string>;
+    maxConcurrency?: number;
 }
 
 export interface GenerateThumbnailsResult {
@@ -137,12 +139,32 @@ export interface GenerateThumbnailsResult {
 export const generateNeededThumbnails = async ({
     photoClusters,
     files,
+    existingThumbnails,
+    maxConcurrency,
 }: GenerateThumbnailsParams): Promise<GenerateThumbnailsResult> => {
     const thumbnailUpdates = new Map<number, string>();
 
     if (photoClusters.length === 0) {
         return { thumbnailUpdates };
     }
+
+    const filesById = new Map(files.map((file) => [file.id, file]));
+    const cachedThumbs = existingThumbnails ?? new Map<number, string>();
+    const processedIds = new Set<number>();
+
+    const addFileFromPhoto = (
+        photo: JourneyPoint | undefined,
+        bucket: EnteFile[],
+    ) => {
+        if (!photo) return;
+        if (photo.image) return;
+        if (cachedThumbs.has(photo.fileId)) return;
+        if (processedIds.has(photo.fileId)) return;
+        const file = filesById.get(photo.fileId);
+        if (!file) return;
+        processedIds.add(photo.fileId);
+        bucket.push(file);
+    };
 
     // Define priority groups with specific file collections
     const priorityGroups: EnteFile[][] = [];
@@ -153,10 +175,7 @@ export const generateNeededThumbnails = async ({
     const firstLocationsFiles: EnteFile[] = [];
     photoClusters.slice(0, 3).forEach((cluster) => {
         cluster.slice(0, 3).forEach((photo) => {
-            const file = files.find((f) => f.id === photo.fileId);
-            if (file && !firstLocationsFiles.includes(file)) {
-                firstLocationsFiles.push(file);
-            }
+            addFileFromPhoto(photo, firstLocationsFiles);
         });
     });
     if (firstLocationsFiles.length > 0) {
@@ -166,17 +185,7 @@ export const generateNeededThumbnails = async ({
     // Priority 3: Map marker photos (first photo from each cluster for markers)
     const mapMarkerFiles: EnteFile[] = [];
     photoClusters.forEach((cluster) => {
-        if (cluster.length > 0 && cluster[0]) {
-            const firstPhoto = cluster[0];
-            const file = files.find((f) => f.id === firstPhoto.fileId);
-            if (
-                file &&
-                !firstLocationsFiles.includes(file) &&
-                !mapMarkerFiles.includes(file)
-            ) {
-                mapMarkerFiles.push(file);
-            }
-        }
+        addFileFromPhoto(cluster[0], mapMarkerFiles);
     });
     if (mapMarkerFiles.length > 0) {
         priorityGroups.push(mapMarkerFiles);
@@ -186,45 +195,39 @@ export const generateNeededThumbnails = async ({
     const remainingLocationFiles: EnteFile[] = [];
     photoClusters.slice(3).forEach((cluster) => {
         cluster.slice(0, 3).forEach((photo) => {
-            const file = files.find((f) => f.id === photo.fileId);
-            if (
-                file &&
-                !firstLocationsFiles.includes(file) &&
-                !mapMarkerFiles.includes(file) &&
-                !remainingLocationFiles.includes(file)
-            ) {
-                remainingLocationFiles.push(file);
-            }
+            addFileFromPhoto(photo, remainingLocationFiles);
         });
     });
     if (remainingLocationFiles.length > 0) {
         priorityGroups.push(remainingLocationFiles);
     }
 
-    // Process priority groups sequentially with delays
-    for (let groupIndex = 0; groupIndex < priorityGroups.length; groupIndex++) {
-        const group = priorityGroups[groupIndex];
-        if (!group) continue;
-
-        // Process files in parallel within each priority group
-        const groupPromises = group.map(async (file) => {
-            try {
-                const thumbnailUrl =
-                    await downloadManager.renderableThumbnailURL(file);
-                if (thumbnailUrl) {
-                    thumbnailUpdates.set(file.id, thumbnailUrl);
+    const groupConcurrency = Math.max(1, maxConcurrency ?? 6);
+    const processGroup = async (group: EnteFile[]) => {
+        if (group.length === 0) return;
+        let index = 0;
+        const worker = async () => {
+            while (index < group.length) {
+                const file = group[index++];
+                if (!file) continue;
+                try {
+                    const thumbnailUrl =
+                        await downloadManager.renderableThumbnailURL(file);
+                    if (thumbnailUrl) {
+                        thumbnailUpdates.set(file.id, thumbnailUrl);
+                    }
+                } catch {
+                    // Silently ignore thumbnail generation errors
                 }
-            } catch {
-                // Silently ignore thumbnail generation errors
             }
-        });
+        };
+        const workerCount = Math.min(groupConcurrency, group.length);
+        await Promise.all(Array.from({ length: workerCount }, () => worker()));
+    };
 
-        await Promise.all(groupPromises);
-
-        // Add small delay between priority groups to allow UI updates
-        if (groupIndex < priorityGroups.length - 1) {
-            await new Promise((resolve) => setTimeout(resolve, 50));
-        }
+    // Process priority groups sequentially
+    for (const group of priorityGroups) {
+        await processGroup(group);
     }
 
     return { thumbnailUpdates };

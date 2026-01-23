@@ -16,7 +16,6 @@ import {
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import { ensureLocalUser } from "ente-accounts/services/user";
-import { ActivityIndicator } from "ente-base/components/mui/ActivityIndicator";
 import type { ModalVisibilityProps } from "ente-base/components/utils/modal";
 import { useBaseContext } from "ente-base/context";
 import { downloadManager } from "ente-gallery/services/download";
@@ -91,6 +90,7 @@ interface MapDataState {
     thumbByFileID: Map<number, string>;
     isLoading: boolean;
     error: string | null;
+    loadedKey: string | null;
 }
 
 interface FavoritesState {
@@ -102,6 +102,7 @@ interface FavoritesState {
 interface MapDataResult extends MapDataState {
     removeFiles: (fileIDs: number[]) => void;
     updateFileVisibility: (file: EnteFile, visibility: ItemVisibility) => void;
+    prefetchThumbnails: (fileIds: number[]) => void;
 }
 
 /**
@@ -123,32 +124,40 @@ interface MapComponents {
  * Dynamically loads map-related React components (Leaflet) to avoid SSR issues
  * Responsibility: Lazy load map dependencies only when needed (window must exist)
  */
-function useMapComponents() {
+function useMapComponents(open: boolean) {
     const [mapComponents, setMapComponents] = useState<MapComponents | null>(
         null,
     );
 
     useEffect(() => {
+        if (!open || mapComponents) return;
         // Only load on client-side where window exists
         if (typeof window === "undefined") return;
 
+        let cancelled = false;
         void Promise.all([
             import("react-leaflet"),
             import("react-leaflet-cluster"),
         ])
             .then(([leaflet, cluster]) =>
-                setMapComponents({
-                    MapContainer: leaflet.MapContainer,
-                    TileLayer: leaflet.TileLayer,
-                    Marker: leaflet.Marker,
-                    useMap: leaflet.useMap,
-                    MarkerClusterGroup: cluster.default,
-                }),
+                cancelled
+                    ? undefined
+                    : setMapComponents({
+                          MapContainer: leaflet.MapContainer,
+                          TileLayer: leaflet.TileLayer,
+                          Marker: leaflet.Marker,
+                          useMap: leaflet.useMap,
+                          MarkerClusterGroup: cluster.default,
+                      }),
             )
             .catch((e: unknown) => {
                 console.error("Failed to load map components", e);
             });
-    }, []);
+
+        return () => {
+            cancelled = true;
+        };
+    }, [open, mapComponents]);
 
     return mapComponents;
 }
@@ -167,6 +176,10 @@ function useCurrentUser() {
     }, []);
 }
 
+// Tune thumbnail fetches to avoid overwhelming the main thread or network.
+const THUMBNAIL_CONCURRENCY = 6;
+const THUMBNAIL_BATCH_SIZE = 24;
+
 /**
  * Loads and manages map data including photos, locations, and thumbnails
  * Responsibility: Fetch collection files, extract locations, generate thumbnails
@@ -184,6 +197,7 @@ function useMapData(
         thumbByFileID: new Map(),
         isLoading: false,
         error: null,
+        loadedKey: null,
     });
 
     // Track which collection we've loaded to avoid unnecessary reloads
@@ -193,36 +207,88 @@ function useMapData(
         collectionId: number | undefined;
         fileCount: number;
     } | null>(null);
+    const loadIdRef = useRef(0);
+    const thumbCacheRef = useRef<Map<number, string>>(new Map());
+    const filesByIdRef = useRef<Map<number, EnteFile>>(new Map());
+    const prefetchInFlightRef = useRef<Set<number>>(new Set());
 
     const loadAllThumbs = useCallback(
-        async (points: JourneyPoint[], files: EnteFile[]) => {
-            // Build a Map for O(1) file lookup instead of O(n) find
-            const filesById = new Map(files.map((f) => [f.id, f]));
+        async (
+            points: JourneyPoint[],
+            filesById: Map<number, EnteFile>,
+            loadId: number,
+            resolvedIds: Set<number>,
+        ) => {
+            if (loadIdRef.current !== loadId) return;
 
-            const entries = await Promise.all(
-                points.map(async (p) => {
-                    if (p.image) return [p.fileId, p.image] as const;
-                    const file = filesById.get(p.fileId);
-                    if (!file) return [p.fileId, undefined] as const;
+            const requested = new Set<number>();
+            const filesToFetch: EnteFile[] = [];
+            for (const point of points) {
+                const fileId = point.fileId;
+                if (point.image || resolvedIds.has(fileId)) continue;
+                if (requested.has(fileId)) continue;
+                const file = filesById.get(fileId);
+                if (file) {
+                    requested.add(fileId);
+                    filesToFetch.push(file);
+                }
+            }
+
+            if (!filesToFetch.length) return;
+
+            const flushUpdates = (updates: Map<number, string>) => {
+                if (!updates.size || loadIdRef.current !== loadId) return;
+                const batch = new Map(updates);
+                updates.clear();
+                batch.forEach((url, id) => {
+                    thumbCacheRef.current.set(id, url);
+                });
+                setState((prev) => {
+                    if (loadIdRef.current !== loadId) return prev;
+                    let changed = false;
+                    const nextThumbs = new Map(prev.thumbByFileID);
+                    for (const [id, url] of batch) {
+                        if (nextThumbs.get(id) !== url) {
+                            nextThumbs.set(id, url);
+                            changed = true;
+                        }
+                    }
+                    return changed
+                        ? { ...prev, thumbByFileID: nextThumbs }
+                        : prev;
+                });
+            };
+
+            const pendingUpdates = new Map<number, string>();
+            let index = 0;
+            const worker = async () => {
+                while (index < filesToFetch.length) {
+                    if (loadIdRef.current !== loadId) return;
+                    const file = filesToFetch[index++];
+                    if (!file) continue;
                     try {
                         const thumb =
                             await downloadManager.renderableThumbnailURL(file);
-                        return [p.fileId, thumb] as const;
+                        if (!thumb) continue;
+                        pendingUpdates.set(file.id, thumb);
+                        if (pendingUpdates.size >= THUMBNAIL_BATCH_SIZE) {
+                            flushUpdates(pendingUpdates);
+                        }
                     } catch {
-                        return [p.fileId, undefined] as const;
+                        // Ignore individual thumbnail failures
                     }
-                }),
+                }
+            };
+
+            const workerCount = Math.min(
+                THUMBNAIL_CONCURRENCY,
+                filesToFetch.length,
+            );
+            await Promise.all(
+                Array.from({ length: workerCount }, () => worker()),
             );
 
-            setState((prev) => ({
-                ...prev,
-                thumbByFileID: new Map(
-                    entries.filter(([, t]) => t !== undefined) as [
-                        number,
-                        string,
-                    ][],
-                ),
-            }));
+            flushUpdates(pendingUpdates);
         },
         [],
     );
@@ -231,6 +297,9 @@ function useMapData(
     useEffect(() => {
         if (!open) {
             loadedCollectionRef.current = null;
+            loadIdRef.current += 1;
+            prefetchInFlightRef.current.clear();
+            filesByIdRef.current = new Map();
         }
     }, [open]);
 
@@ -252,6 +321,15 @@ function useMapData(
         }
 
         const loadMapData = async () => {
+            const loadId = ++loadIdRef.current;
+            const isCurrentLoad = () => loadIdRef.current === loadId;
+            const currentKey = getCollectionKey(
+                currentSummaryId,
+                currentCollectionId,
+                currentFileCount,
+            );
+            prefetchInFlightRef.current.clear();
+
             setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
             try {
@@ -259,29 +337,54 @@ function useMapData(
                     collectionSummary,
                     activeCollection,
                 );
+                if (!isCurrentLoad()) return;
                 const locationPoints = extractLocationPoints(files); // transforms the files into JourneyData[]
 
                 if (locationPoints.length) {
                     const sortedPoints = sortPhotosByTimestamp(locationPoints);
+                    const cachedThumbs = new Map<number, string>();
+                    const pointsWithCache = sortedPoints.map((point) => {
+                        const cached = thumbCacheRef.current.get(point.fileId);
+                        if (cached) {
+                            cachedThumbs.set(point.fileId, cached);
+                            return { ...point, image: cached };
+                        }
+                        return point;
+                    });
 
-                    const { thumbnailUpdates } = await generateNeededThumbnails(
-                        { photoClusters: [sortedPoints], files },
-                    );
+                    let thumbnailUpdates = new Map<number, string>();
+                    if (pointsWithCache.some((point) => !point.image)) {
+                        const result = await generateNeededThumbnails({
+                            photoClusters: [pointsWithCache],
+                            files,
+                            existingThumbnails: cachedThumbs,
+                        });
+                        if (!isCurrentLoad()) return;
+                        thumbnailUpdates = result.thumbnailUpdates;
+                        thumbnailUpdates.forEach((url, id) => {
+                            thumbCacheRef.current.set(id, url);
+                            cachedThumbs.set(id, url);
+                        });
+                    }
 
-                    const pointsWithThumbs = sortedPoints.map((point) => {
+                    const pointsWithThumbs = pointsWithCache.map((point) => {
                         const thumb = thumbnailUpdates.get(point.fileId);
                         return thumb ? { ...point, image: thumb } : point;
                     });
+                    const filesById = new Map(
+                        files.map((file) => [file.id, file]),
+                    );
+                    filesByIdRef.current = filesById;
+                    const resolvedThumbIds = new Set(cachedThumbs.keys());
 
                     setState({
-                        filesByID: new Map(
-                            files.map((file) => [file.id, file]),
-                        ),
+                        filesByID: filesById,
                         mapCenter: getMapCenter([], pointsWithThumbs),
                         mapPhotos: pointsWithThumbs,
-                        thumbByFileID: new Map(),
+                        thumbByFileID: new Map(cachedThumbs),
                         isLoading: false,
                         error: null,
+                        loadedKey: currentKey,
                     });
 
                     // Mark this collection as loaded
@@ -291,11 +394,18 @@ function useMapData(
                         fileCount: currentFileCount,
                     };
 
-                    void loadAllThumbs(pointsWithThumbs, files);
+                    void loadAllThumbs(
+                        pointsWithThumbs,
+                        filesById,
+                        loadId,
+                        resolvedThumbIds,
+                    );
                     return;
                 }
 
                 // Reset state when no geotagged locations exist to avoid showing stale data
+                if (!isCurrentLoad()) return;
+                filesByIdRef.current = new Map();
                 setState({
                     filesByID: new Map(),
                     mapCenter: null,
@@ -303,6 +413,7 @@ function useMapData(
                     thumbByFileID: new Map(),
                     isLoading: false,
                     error: null,
+                    loadedKey: currentKey,
                 });
 
                 // Mark this collection as loaded (even with no photos)
@@ -314,17 +425,22 @@ function useMapData(
 
                 return;
             } catch (e) {
+                if (!isCurrentLoad()) return;
+                filesByIdRef.current = new Map();
                 setState((prev) => ({
                     ...prev,
                     isLoading: false,
                     error: t("something_went_wrong"),
+                    loadedKey: currentKey,
                 }));
                 onGenericError(e);
             } finally {
-                // Ensure we never leave the dialog stuck in a loading state
-                setState((prev) =>
-                    prev.isLoading ? { ...prev, isLoading: false } : prev,
-                );
+                if (isCurrentLoad()) {
+                    // Ensure we never leave the dialog stuck in a loading state
+                    setState((prev) =>
+                        prev.isLoading ? { ...prev, isLoading: false } : prev,
+                    );
+                }
             }
         };
 
@@ -350,6 +466,7 @@ function useMapData(
             const mapPhotos = prev.mapPhotos.filter(
                 (photo) => !ids.has(photo.fileId),
             );
+            filesByIdRef.current = filesByID;
             return {
                 ...prev,
                 filesByID,
@@ -377,13 +494,87 @@ function useMapData(
                 };
                 const filesByID = new Map(prev.filesByID);
                 filesByID.set(file.id, updatedFile);
+                filesByIdRef.current = filesByID;
                 return { ...prev, filesByID };
             });
         },
         [],
     );
 
-    return { ...state, removeFiles, updateFileVisibility };
+    const prefetchThumbnails = useCallback((fileIds: number[]) => {
+        if (!fileIds.length) return;
+
+        const loadId = loadIdRef.current;
+        const pending = prefetchInFlightRef.current;
+        const filesById = filesByIdRef.current;
+        const toFetch: EnteFile[] = [];
+        const seen = new Set<number>();
+
+        for (const id of fileIds) {
+            if (seen.has(id)) continue;
+            seen.add(id);
+            if (thumbCacheRef.current.has(id)) continue;
+            if (pending.has(id)) continue;
+            const file = filesById.get(id);
+            if (!file) continue;
+            pending.add(id);
+            toFetch.push(file);
+        }
+
+        if (!toFetch.length) return;
+
+        const pendingUpdates = new Map<number, string>();
+        const flushUpdates = () => {
+            if (!pendingUpdates.size) return;
+            const batch = new Map(pendingUpdates);
+            pendingUpdates.clear();
+            batch.forEach((url, id) => {
+                thumbCacheRef.current.set(id, url);
+            });
+            setState((prev) => {
+                if (loadIdRef.current !== loadId) return prev;
+                let changed = false;
+                const nextThumbs = new Map(prev.thumbByFileID);
+                for (const [id, url] of batch) {
+                    if (nextThumbs.get(id) !== url) {
+                        nextThumbs.set(id, url);
+                        changed = true;
+                    }
+                }
+                return changed ? { ...prev, thumbByFileID: nextThumbs } : prev;
+            });
+        };
+
+        let index = 0;
+            const worker = async () => {
+                while (index < toFetch.length) {
+                    if (loadIdRef.current !== loadId) return;
+                    const file = toFetch[index++];
+                    if (!file) continue;
+                    try {
+                        const thumb =
+                            await downloadManager.renderableThumbnailURL(file);
+                    if (thumb) {
+                        pendingUpdates.set(file.id, thumb);
+                        if (pendingUpdates.size >= THUMBNAIL_BATCH_SIZE) {
+                            flushUpdates();
+                        }
+                    }
+                } catch {
+                    // Ignore individual thumbnail failures
+                } finally {
+                    pending.delete(file.id);
+                }
+            }
+        };
+
+        const workerCount = Math.min(THUMBNAIL_CONCURRENCY, toFetch.length);
+        void Promise.all(
+            Array.from({ length: workerCount }, () => worker()),
+        ).then(() => flushUpdates());
+    }, []);
+
+    return { ...state, removeFiles, updateFileVisibility, prefetchThumbnails };
 }
 
 /**
@@ -756,6 +947,14 @@ function getPhotoThumbnail(
     return photo.image || thumbByFileID.get(photo.fileId);
 }
 
+function getCollectionKey(
+    summaryId: number,
+    collectionId: number | undefined,
+    fileCount: number,
+): string {
+    return `${summaryId}:${collectionId ?? "all"}:${fileCount}`;
+}
+
 /**
  * Sorts journey points by timestamp in descending order (newest first)
  */
@@ -818,12 +1017,12 @@ async function getFilesForCollection(
         );
         return uniqueFilesByID(filtered);
     }
-    const allFiles = await savedCollectionFiles();
-    // Filter out hidden and archived files to prevent leaking items users expect to remain hidden.
-    const visibleFiles = allFiles.filter(isFileVisible);
     if (!activeCollection) {
         return [];
     }
+    const allFiles = await savedCollectionFiles();
+    // Filter out hidden and archived files to prevent leaking items users expect to remain hidden.
+    const visibleFiles = allFiles.filter(isFileVisible);
     const filtered = visibleFiles.filter(
         (file) => file.collectionID === activeCollection.id,
     );
@@ -877,20 +1076,23 @@ export const CollectionMapDialog: React.FC<CollectionMapDialogProps> = ({
     onSelectPerson,
 }) => {
     const { onGenericError } = useBaseContext();
-    const mapComponents = useMapComponents();
+    const mapComponents = useMapComponents(open);
     const user = useCurrentUser();
     const [isFileViewerOpen, setIsFileViewerOpen] = useState(false);
     const optimalZoom = calculateOptimalZoom();
+    const [isSyncing, setIsSyncing] = useState(false);
+    const syncRequestedRef = useRef(false);
 
     const {
         mapCenter,
         mapPhotos,
         filesByID,
         thumbByFileID,
-        isLoading,
         error,
+        loadedKey,
         removeFiles: removeFilesFromMap,
         updateFileVisibility,
+        prefetchThumbnails,
     } = useMapData(open, collectionSummary, activeCollection, onGenericError);
 
     const { visiblePhotos, setVisiblePhotos } = useVisiblePhotos();
@@ -930,6 +1132,30 @@ export const CollectionMapDialog: React.FC<CollectionMapDialogProps> = ({
         [onRemotePull],
     );
     const visualFeedback = useMemo(() => onVisualFeedback, [onVisualFeedback]);
+
+    useEffect(() => {
+        if (!open) {
+            syncRequestedRef.current = false;
+            setIsSyncing(false);
+            return;
+        }
+        if (!onRemotePull || syncRequestedRef.current) return;
+
+        syncRequestedRef.current = true;
+        let cancelled = false;
+        setIsSyncing(true);
+        void handleRemotePull()
+            .catch(onGenericError)
+            .finally(() => {
+                if (!cancelled) {
+                    setIsSyncing(false);
+                }
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [open, onRemotePull, handleRemotePull, onGenericError]);
 
     // Empty selection state since we don't support selection in map view
     const emptySelected = useMemo<SelectedState>(
@@ -975,16 +1201,22 @@ export const CollectionMapDialog: React.FC<CollectionMapDialogProps> = ({
         [handleFileVisibilityUpdate, updateFileVisibility],
     );
 
-    const body = useMemo(() => {
-        if (isLoading) {
-            return (
-                <CenteredBox>
-                    <ActivityIndicator size="28px" />
-                </CenteredBox>
-            );
-        }
+    const handlePrefetchVisibleThumbnails = useCallback(
+        (fileIds: number[]) => {
+            prefetchThumbnails(fileIds);
+        },
+        [prefetchThumbnails],
+    );
 
-        if (error) {
+    const body = useMemo(() => {
+        const currentKey = getCollectionKey(
+            collectionSummary.id,
+            activeCollection?.id,
+            collectionSummary.fileCount,
+        );
+        const hasLoadedCurrent = loadedKey === currentKey;
+
+        if (hasLoadedCurrent && error) {
             return (
                 <CenteredBox>
                     <Typography variant="body" color="text.secondary">
@@ -994,21 +1226,27 @@ export const CollectionMapDialog: React.FC<CollectionMapDialogProps> = ({
             );
         }
 
-        // Wait for map components to load (they're dynamically imported)
-        if (!mapComponents) {
+        if (hasLoadedCurrent && !mapPhotos.length) {
             return (
-                <CenteredBox>
-                    <ActivityIndicator size="28px" />
+                <CenteredBox onClose={onClose} closeLabel={t("close")}>
+                    <Typography variant="body" color="text.secondary">
+                        {isSyncing
+                            ? t("syncing_wait")
+                            : t("no_geotagged_photos")}
+                    </Typography>
                 </CenteredBox>
             );
         }
 
-        if (!mapPhotos.length || !mapCenter) {
+        // Waiting for data or map components; avoid showing spinners.
+        if (!hasLoadedCurrent || !mapComponents || !mapCenter) {
             return (
                 <CenteredBox onClose={onClose} closeLabel={t("close")}>
-                    <Typography variant="body" color="text.secondary">
-                        {t("no_geotagged_photos")}
-                    </Typography>
+                    {isSyncing && (
+                        <Typography variant="body" color="text.secondary">
+                            {t("syncing_wait")}
+                        </Typography>
+                    )}
                 </CenteredBox>
             );
         }
@@ -1024,8 +1262,10 @@ export const CollectionMapDialog: React.FC<CollectionMapDialogProps> = ({
                 mapCenter={mapCenter}
                 optimalZoom={optimalZoom}
                 createClusterCustomIcon={createClusterCustomIcon}
+                isSyncing={isSyncing}
                 onClose={onClose}
                 onVisiblePhotosChange={setVisiblePhotos}
+                onPrefetchVisibleThumbnails={handlePrefetchVisibleThumbnails}
                 user={user}
                 favoriteFileIDs={favoriteFileIDs}
                 pendingFavoriteUpdates={pendingFavoriteUpdates}
@@ -1050,6 +1290,7 @@ export const CollectionMapDialog: React.FC<CollectionMapDialogProps> = ({
             />
         );
     }, [
+        activeCollection?.id,
         collectionSummary,
         createClusterCustomIcon,
         emptySelected,
@@ -1057,9 +1298,9 @@ export const CollectionMapDialog: React.FC<CollectionMapDialogProps> = ({
         favoriteFileIDs,
         handleFileVisibilityUpdateWithLocalState,
         handleRemotePull,
+        handlePrefetchVisibleThumbnails,
         handleToggleFavorite,
         visualFeedback,
-        isLoading,
         mapCenter,
         mapComponents,
         mapPhotos,
@@ -1081,7 +1322,9 @@ export const CollectionMapDialog: React.FC<CollectionMapDialogProps> = ({
         visibleFiles,
         visiblePhotos,
         onClose,
+        isSyncing,
         handleSetFileViewerOpen,
+        loadedKey,
     ]);
 
     return (
@@ -1135,8 +1378,10 @@ interface MapLayoutProps {
     mapCenter: [number, number];
     optimalZoom: number;
     createClusterCustomIcon: (cluster: unknown) => unknown;
+    isSyncing: boolean;
     onClose: () => void;
     onVisiblePhotosChange: (photosInView: JourneyPoint[]) => void;
+    onPrefetchVisibleThumbnails: (fileIds: number[]) => void;
     user: ReturnType<typeof useCurrentUser>;
     favoriteFileIDs: Set<number>;
     pendingFavoriteUpdates: Set<number>;
@@ -1171,8 +1416,10 @@ function MapLayout({
     mapCenter,
     optimalZoom,
     createClusterCustomIcon,
+    isSyncing,
     onClose,
     onVisiblePhotosChange,
+    onPrefetchVisibleThumbnails,
     user,
     favoriteFileIDs,
     pendingFavoriteUpdates,
@@ -1201,6 +1448,7 @@ function MapLayout({
                 visibleFiles={visibleFiles}
                 mapPhotos={mapPhotos}
                 thumbByFileID={thumbByFileID}
+                isSyncing={isSyncing}
                 onClose={onClose}
                 user={user}
                 favoriteFileIDs={favoriteFileIDs}
@@ -1231,6 +1479,7 @@ function MapLayout({
                     thumbByFileID={thumbByFileID}
                     createClusterCustomIcon={createClusterCustomIcon}
                     onVisiblePhotosChange={onVisiblePhotosChange}
+                    onPrefetchVisibleThumbnails={onPrefetchVisibleThumbnails}
                 />
             </Box>
         </Box>
@@ -1251,6 +1500,7 @@ interface CollectionSidebarProps {
     visibleFiles: EnteFile[];
     mapPhotos: JourneyPoint[];
     thumbByFileID: Map<number, string>;
+    isSyncing: boolean;
     onClose: () => void;
     user: ReturnType<typeof useCurrentUser>;
     favoriteFileIDs: Set<number>;
@@ -1288,6 +1538,7 @@ function CollectionSidebar({
     visibleFiles,
     mapPhotos,
     thumbByFileID,
+    isSyncing,
     onClose,
     user,
     favoriteFileIDs,
@@ -1374,6 +1625,12 @@ function CollectionSidebar({
         currentDate && !hideDateForAllNoScroll && !hideDateForMobileNoScroll
             ? currentDate
             : undefined;
+    const summaryLineParts = [
+        t("photos_count", { count: collectionSummary.fileCount }),
+    ];
+    if (visibleDate) summaryLineParts.push(visibleDate);
+    if (isSyncing) summaryLineParts.push(t("syncing_wait"));
+    const summaryLine = summaryLineParts.join(" · ");
 
     return (
         <SidebarWrapper>
@@ -1400,10 +1657,7 @@ function CollectionSidebar({
                                 variant="small"
                                 sx={{ color: "text.muted", fontSize: "14px" }}
                             >
-                                {t("photos_count", {
-                                    count: collectionSummary.fileCount,
-                                })}
-                                {visibleDate && ` · ${visibleDate}`}
+                                {summaryLine}
                             </Typography>
                         </Box>
                         <IconButton
@@ -1499,6 +1753,7 @@ interface MapCanvasProps {
     thumbByFileID: Map<number, string>;
     createClusterCustomIcon: (cluster: unknown) => unknown;
     onVisiblePhotosChange: (photosInView: JourneyPoint[]) => void;
+    onPrefetchVisibleThumbnails: (fileIds: number[]) => void;
 }
 
 const MapCanvas = React.memo(function MapCanvas({
@@ -1509,18 +1764,40 @@ const MapCanvas = React.memo(function MapCanvas({
     thumbByFileID,
     createClusterCustomIcon,
     onVisiblePhotosChange,
+    onPrefetchVisibleThumbnails,
 }: MapCanvasProps) {
     const { MapContainer, TileLayer, Marker, useMap, MarkerClusterGroup } =
         mapComponents;
+    const markerIconCacheRef = useRef<
+        Map<number, { url: string; icon: ReturnType<typeof createMarkerIcon> }>
+    >(new Map());
 
     // Memoize marker icons to prevent recreation on every render
     // Key: fileId, Value: Leaflet icon instance
     const markerIcons = useMemo(() => {
         const icons = new Map<number, ReturnType<typeof createMarkerIcon>>();
+        const cache = markerIconCacheRef.current;
+        const activeIds = new Set<number>();
+
         for (const photo of mapPhotos) {
-            const thumbnail = getPhotoThumbnail(photo, thumbByFileID);
-            icons.set(photo.fileId, createMarkerIcon(thumbnail ?? "", 68));
+            const thumbnail = getPhotoThumbnail(photo, thumbByFileID) ?? "";
+            const cached = cache.get(photo.fileId);
+            if (cached && cached.url === thumbnail) {
+                icons.set(photo.fileId, cached.icon);
+            } else {
+                const icon = createMarkerIcon(thumbnail, 68);
+                cache.set(photo.fileId, { url: thumbnail, icon });
+                icons.set(photo.fileId, icon);
+            }
+            activeIds.add(photo.fileId);
         }
+
+        for (const id of cache.keys()) {
+            if (!activeIds.has(id)) {
+                cache.delete(id);
+            }
+        }
+
         return icons;
     }, [mapPhotos, thumbByFileID]);
 
@@ -1543,6 +1820,7 @@ const MapCanvas = React.memo(function MapCanvas({
                 useMap={useMap}
                 photos={mapPhotos}
                 onVisiblePhotosChange={onVisiblePhotosChange}
+                onPrefetchVisibleThumbnails={onPrefetchVisibleThumbnails}
             />
             <MarkerClusterGroup
                 key={thumbByFileID.size}
@@ -1755,22 +2033,17 @@ interface MapViewportListenerProps {
     useMap: typeof import("react-leaflet").useMap;
     photos: JourneyPoint[];
     onVisiblePhotosChange: (photosInView: JourneyPoint[]) => void;
+    onPrefetchVisibleThumbnails: (fileIds: number[]) => void;
 }
 
 function MapViewportListener({
     useMap,
     photos,
     onVisiblePhotosChange,
+    onPrefetchVisibleThumbnails,
 }: MapViewportListenerProps) {
     const map = useMap();
     const previousVisibleIdsRef = useRef<Set<number>>(new Set());
-    const previousClusterCountRef = useRef<number>(0);
-
-    // Cache cluster count query result to avoid repeated DOM queries
-    const getClusterCount = useCallback(
-        () => map.getContainer().querySelectorAll(".marker-cluster").length,
-        [map],
-    );
 
     const updateVisiblePhotos = useCallback(() => {
         const bounds = map.getBounds();
@@ -1779,33 +2052,29 @@ function MapViewportListener({
         // Use Set comparison instead of string join for O(n) vs O(n log n + n)
         const currentIds = new Set(inView.map((p) => p.fileId));
         const previousIds = previousVisibleIdsRef.current;
-
-        const clusterCount = getClusterCount();
-        const clusterChanged = previousClusterCountRef.current !== clusterCount;
+        onPrefetchVisibleThumbnails([...currentIds]);
 
         // Check if sets are equal (same size and all elements match)
         const setsEqual =
             currentIds.size === previousIds.size &&
             [...currentIds].every((id) => previousIds.has(id));
 
-        if (setsEqual && !clusterChanged) {
+        if (setsEqual) {
             return;
         }
 
         previousVisibleIdsRef.current = currentIds;
-        previousClusterCountRef.current = clusterCount;
         onVisiblePhotosChange(inView);
-    }, [getClusterCount, map, onVisiblePhotosChange, photos]);
+    }, [map, onPrefetchVisibleThumbnails, onVisiblePhotosChange, photos]);
 
     useEffect(() => {
         if (!photos.length) {
             previousVisibleIdsRef.current = new Set();
-            previousClusterCountRef.current = getClusterCount();
             onVisiblePhotosChange([]);
             return;
         }
         updateVisiblePhotos();
-    }, [getClusterCount, photos, onVisiblePhotosChange, updateVisiblePhotos]);
+    }, [photos, onVisiblePhotosChange, updateVisiblePhotos]);
 
     useEffect(() => {
         map.on("moveend", updateVisiblePhotos);
