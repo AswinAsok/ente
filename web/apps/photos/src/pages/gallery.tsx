@@ -1654,6 +1654,7 @@ const Page: React.FC = () => {
                     user,
                     // TODO: These are incorrect assertions, the types of the
                     // component need to be updated.
+                    collections: state.collections,
                     activeCollection: activeCollection!,
                     activeCollectionID: activeCollectionID!,
                     activePerson,

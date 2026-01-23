@@ -27,11 +27,13 @@ import {
     PseudoCollectionID,
     sortCollectionSummaries,
     type CollectionsSortBy,
+    type CollectionSummary,
     type CollectionSummaries,
 } from "ente-new/photos/services/collection-summary";
 import { includes } from "ente-utils/type-guards";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { AlbumCastDialog } from "./AlbumCastDialog";
+import { CollectionContextMenu } from "./CollectionContextMenu";
 import {
     CollectionHeader,
     type CollectionHeaderProps,
@@ -50,6 +52,7 @@ type GalleryBarAndListHeaderProps = Omit<
      */
     shouldHide: boolean;
     barCollectionSummaries: CollectionSummaries;
+    collections: Collection[];
     activeCollection: Collection | undefined;
     setActiveCollectionID: (collectionID: number) => void;
     setFileListHeader: (header: FileListHeaderOrFooter) => void;
@@ -98,6 +101,7 @@ export const GalleryBarAndListHeader: React.FC<
     onChangeMode,
     user,
     barCollectionSummaries: toShowCollectionSummaries,
+    collections,
     activeCollection,
     activeCollectionID,
     setActiveCollectionID,
@@ -129,6 +133,45 @@ export const GalleryBarAndListHeader: React.FC<
     const [collectionsSortBy, setCollectionsSortBy] =
         useCollectionsSortByLocalState("updation-time-desc");
 
+    const [collectionContextMenu, setCollectionContextMenu] = useState<{
+        position: { top: number; left: number };
+        collectionSummary: CollectionSummary;
+    } | null>(null);
+    const [isCollectionContextMenuOpen, setIsCollectionContextMenuOpen] =
+        useState(false);
+    const [shareTargetCollectionID, setShareTargetCollectionID] = useState<
+        number | null
+    >(null);
+    const [castTargetCollectionID, setCastTargetCollectionID] = useState<
+        number | null
+    >(null);
+
+    const handleOpenCollectionShare = useCallback(
+        (collectionID: number) => {
+            setShareTargetCollectionID(collectionID);
+            showCollectionShare();
+        },
+        [showCollectionShare],
+    );
+
+    const handleOpenCollectionCast = useCallback(
+        (collectionID: number) => {
+            setCastTargetCollectionID(collectionID);
+            showCollectionCast();
+        },
+        [showCollectionCast],
+    );
+
+    const handleActiveCollectionShare = useCallback(() => {
+        if (activeCollectionID === undefined) return;
+        handleOpenCollectionShare(activeCollectionID);
+    }, [activeCollectionID, handleOpenCollectionShare]);
+
+    const handleActiveCollectionCast = useCallback(() => {
+        if (activeCollectionID === undefined) return;
+        handleOpenCollectionCast(activeCollectionID);
+    }, [activeCollectionID, handleOpenCollectionCast]);
+
     const shouldBeHidden = useMemo(
         () =>
             shouldHide ||
@@ -146,12 +189,39 @@ export const GalleryBarAndListHeader: React.FC<
         [collectionsSortBy, toShowCollectionSummaries],
     );
 
-    const isActiveCollectionDownloadInProgress = useCallback(() => {
-        const group = saveGroups.find(
-            (g) => g.collectionSummaryID === activeCollectionID,
-        );
-        return !!group && !isSaveComplete(group) && !isSaveCancelled(group);
-    }, [saveGroups, activeCollectionID]);
+    const isCollectionDownloadInProgress = useCallback(
+        (collectionSummaryID: number | undefined) => {
+            if (collectionSummaryID === undefined) return false;
+            const group = saveGroups.find(
+                (g) => g.collectionSummaryID === collectionSummaryID,
+            );
+            return !!group && !isSaveComplete(group) && !isSaveCancelled(group);
+        },
+        [saveGroups],
+    );
+
+    const isActiveCollectionDownloadInProgress = useCallback(
+        () => isCollectionDownloadInProgress(activeCollectionID),
+        [isCollectionDownloadInProgress, activeCollectionID],
+    );
+
+    const handleCollectionContextMenu = useCallback(
+        (event: React.MouseEvent, collectionSummary: CollectionSummary) => {
+            if (!shouldShowCollectionContextMenu(collectionSummary)) return;
+            event.preventDefault();
+            event.stopPropagation();
+            setCollectionContextMenu({
+                position: { top: event.clientY, left: event.clientX },
+                collectionSummary,
+            });
+            setIsCollectionContextMenuOpen(true);
+        },
+        [setCollectionContextMenu, setIsCollectionContextMenuOpen],
+    );
+
+    const handleCloseCollectionContextMenu = useCallback(() => {
+        setIsCollectionContextMenuOpen(false);
+    }, [setIsCollectionContextMenuOpen]);
 
     useEffect(() => {
         if (shouldHide) return;
@@ -179,8 +249,8 @@ export const GalleryBarAndListHeader: React.FC<
                             onSelectPerson,
                         }}
                         collectionSummary={collectionSummary!}
-                        onCollectionShare={showCollectionShare}
-                        onCollectionCast={showCollectionCast}
+                        onCollectionShare={handleActiveCollectionShare}
+                        onCollectionCast={handleActiveCollectionCast}
                     />
                 ) : mode != "people" && collectionSummary ? (
                     <GalleryItemsHeaderAdapter>
@@ -208,8 +278,8 @@ export const GalleryBarAndListHeader: React.FC<
         activeCollectionID,
         isActiveCollectionDownloadInProgress,
         activePerson,
-        showCollectionShare,
-        showCollectionCast,
+        handleActiveCollectionShare,
+        handleActiveCollectionCast,
         onRemotePull,
         onAddSaveGroup,
         onMarkTempDeleted,
@@ -224,6 +294,73 @@ export const GalleryBarAndListHeader: React.FC<
         // This causes a loop since it is an array dep
         // people,
     ]);
+
+    const contextMenuCollectionSummary =
+        collectionContextMenu?.collectionSummary;
+    const contextMenuCollection = useMemo(() => {
+        if (!contextMenuCollectionSummary) return undefined;
+        return collections.find(
+            (collection) => collection.id === contextMenuCollectionSummary.id,
+        );
+    }, [collections, contextMenuCollectionSummary]);
+
+    const contextMenuDownloadInProgress = useMemo(
+        () =>
+            contextMenuCollectionSummary
+                ? () =>
+                      isCollectionDownloadInProgress(
+                          contextMenuCollectionSummary.id,
+                      )
+                : undefined,
+        [contextMenuCollectionSummary, isCollectionDownloadInProgress],
+    );
+
+    const isContextMenuCollectionActive =
+        contextMenuCollectionSummary?.id === activeCollectionID;
+
+    const handleContextMenuShare = useCallback(() => {
+        if (!contextMenuCollectionSummary) return;
+        handleOpenCollectionShare(contextMenuCollectionSummary.id);
+    }, [contextMenuCollectionSummary, handleOpenCollectionShare]);
+
+    const handleContextMenuCast = useCallback(() => {
+        if (!contextMenuCollectionSummary) return;
+        handleOpenCollectionCast(contextMenuCollectionSummary.id);
+    }, [contextMenuCollectionSummary, handleOpenCollectionCast]);
+
+    const shareCollectionID = shareTargetCollectionID ?? activeCollectionID;
+    const shareCollectionSummary =
+        shareCollectionID === undefined
+            ? undefined
+            : toShowCollectionSummaries.get(shareCollectionID);
+    const shareCollection = useMemo(
+        () =>
+            shareCollectionID === undefined
+                ? undefined
+                : collections.find(
+                      (collection) => collection.id === shareCollectionID,
+                  ),
+        [collections, shareCollectionID],
+    );
+
+    const castCollectionID = castTargetCollectionID ?? activeCollectionID;
+    const castCollection = useMemo(
+        () =>
+            castCollectionID === undefined
+                ? undefined
+                : collections.find((collection) => collection.id === castCollectionID),
+        [collections, castCollectionID],
+    );
+
+    const handleCloseCollectionShare = useCallback(() => {
+        setShareTargetCollectionID(null);
+        collectionShareVisibilityProps.onClose();
+    }, [collectionShareVisibilityProps.onClose]);
+
+    const handleCloseCollectionCast = useCallback(() => {
+        setCastTargetCollectionID(null);
+        collectionCastVisibilityProps.onClose();
+    }, [collectionCastVisibilityProps.onClose]);
 
     if (shouldBeHidden) {
         return <></>;
@@ -242,12 +379,39 @@ export const GalleryBarAndListHeader: React.FC<
                     collectionsSortBy,
                 }}
                 onSelectCollectionID={setActiveCollectionID}
+                onCollectionContextMenu={
+                    mode != "people" ? handleCollectionContextMenu : undefined
+                }
                 onChangeCollectionsSortBy={setCollectionsSortBy}
                 onShowAllAlbums={showAllAlbums}
                 collectionSummaries={sortedCollectionSummaries.filter(
                     (cs) => !cs.attributes.has("hideFromCollectionBar"),
                 )}
             />
+            {contextMenuCollectionSummary && (
+                <CollectionContextMenu
+                    open={isCollectionContextMenuOpen}
+                    anchorPosition={collectionContextMenu?.position}
+                    onClose={handleCloseCollectionContextMenu}
+                    collectionSummary={contextMenuCollectionSummary}
+                    collection={contextMenuCollection}
+                    isActiveCollection={!!isContextMenuCollectionActive}
+                    setActiveCollectionID={setActiveCollectionID}
+                    isCollectionDownloadInProgress={contextMenuDownloadInProgress}
+                    onCollectionShare={handleContextMenuShare}
+                    onCollectionCast={handleContextMenuCast}
+                    onRemotePull={onRemotePull}
+                    onAddSaveGroup={onAddSaveGroup}
+                    onMarkTempDeleted={onMarkTempDeleted}
+                    onAddFileToCollection={onAddFileToCollection}
+                    onRemoteFilesPull={onRemoteFilesPull}
+                    onVisualFeedback={onVisualFeedback}
+                    fileNormalCollectionIDs={fileNormalCollectionIDs}
+                    collectionNameByID={collectionNameByID}
+                    onSelectCollection={onSelectCollection}
+                    onSelectPerson={onSelectPerson}
+                />
+            )}
 
             <AllAlbums
                 {...allAlbumsVisibilityProps}
@@ -260,31 +424,34 @@ export const GalleryBarAndListHeader: React.FC<
                 isInHiddenSection={mode == "hidden-albums"}
                 onRemotePull={onRemotePull}
             />
-            {activeCollection && (
-                <>
-                    <CollectionShare
-                        {...collectionShareVisibilityProps}
-                        collectionSummary={
-                            toShowCollectionSummaries.get(activeCollectionID!)!
-                        }
-                        collection={activeCollection}
-                        {...{
-                            user,
-                            emailByUserID,
-                            shareSuggestionEmails,
-                            setBlockingLoad,
-                            onRemotePull,
-                        }}
-                    />
-                    <AlbumCastDialog
-                        {...collectionCastVisibilityProps}
-                        collection={activeCollection}
-                    />
-                </>
+            {shareCollection && shareCollectionSummary && (
+                <CollectionShare
+                    {...collectionShareVisibilityProps}
+                    onClose={handleCloseCollectionShare}
+                    collectionSummary={shareCollectionSummary}
+                    collection={shareCollection}
+                    {...{
+                        user,
+                        emailByUserID,
+                        shareSuggestionEmails,
+                        setBlockingLoad,
+                        onRemotePull,
+                    }}
+                />
+            )}
+            {castCollection && (
+                <AlbumCastDialog
+                    {...collectionCastVisibilityProps}
+                    onClose={handleCloseCollectionCast}
+                    collection={castCollection}
+                />
             )}
         </>
     );
 };
+
+const shouldShowCollectionContextMenu = ({ type }: CollectionSummary) =>
+    type !== "all" && type !== "archiveItems" && type !== "uncategorized";
 
 /**
  * A hook that maintains the collections sort order both as in-memory and local

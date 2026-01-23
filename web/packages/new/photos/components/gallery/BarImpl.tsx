@@ -71,6 +71,13 @@ export interface GalleryBarImplProps {
      */
     onSelectCollectionID: (collectionID: number) => void;
     /**
+     * Called when a collection tile is right-clicked.
+     */
+    onCollectionContextMenu?: (
+        event: React.MouseEvent,
+        collectionSummary: CollectionSummary,
+    ) => void;
+    /**
      * Called when the user selects the option to show a modal with all the
      * albums.
      */
@@ -103,6 +110,7 @@ export const GalleryBarImpl: React.FC<GalleryBarImplProps> = ({
     collectionSummaries,
     activeCollectionID,
     onSelectCollectionID,
+    onCollectionContextMenu,
     onShowAllAlbums,
     collectionsSortBy,
     onChangeCollectionsSortBy,
@@ -199,6 +207,7 @@ export const GalleryBarImpl: React.FC<GalleryBarImplProps> = ({
                       collectionSummaries,
                       activeCollectionID: activeCollectionID!,
                       onSelectCollectionID,
+                      onContextMenu: onCollectionContextMenu,
                   }
                 : {
                       type: "people" as const,
@@ -211,6 +220,7 @@ export const GalleryBarImpl: React.FC<GalleryBarImplProps> = ({
             collectionSummaries,
             activeCollectionID,
             onSelectCollectionID,
+            onCollectionContextMenu,
             people,
             activePerson,
             onSelectPerson,
@@ -419,6 +429,10 @@ type ItemData =
           collectionSummaries: CollectionSummary[];
           activeCollectionID: number;
           onSelectCollectionID: (id: number) => void;
+          onContextMenu?: (
+              event: React.MouseEvent,
+              collectionSummary: CollectionSummary,
+          ) => void;
       }
     | {
           type: "people";
@@ -462,6 +476,7 @@ const ListItem = memo((props: ListChildComponentProps<ItemData>) => {
                 collectionSummaries,
                 activeCollectionID,
                 onSelectCollectionID,
+                onContextMenu,
             } = data;
             const collectionSummary = collectionSummaries[index]!;
             card = (
@@ -471,6 +486,7 @@ const ListItem = memo((props: ListChildComponentProps<ItemData>) => {
                         collectionSummary,
                         activeCollectionID,
                         onSelectCollectionID,
+                        onContextMenu,
                     }}
                 />
             );
@@ -497,18 +513,28 @@ interface CollectionBarCardProps {
     collectionSummary: CollectionSummary;
     activeCollectionID: number;
     onSelectCollectionID: (collectionID: number) => void;
+    onContextMenu?: (
+        event: React.MouseEvent,
+        collectionSummary: CollectionSummary,
+    ) => void;
 }
 
 const CollectionBarCard: React.FC<CollectionBarCardProps> = ({
     collectionSummary,
     activeCollectionID,
     onSelectCollectionID,
+    onContextMenu,
 }: CollectionBarCardProps) => (
     <div>
         <ItemCard
             TileComponent={BarItemTile}
             coverFile={collectionSummary.coverFile}
             onClick={() => onSelectCollectionID(collectionSummary.id)}
+            onContextMenu={
+                onContextMenu
+                    ? (event) => onContextMenu(event, collectionSummary)
+                    : undefined
+            }
         >
             <CardText>{collectionSummary.name}</CardText>
             <CollectionBarCardIcon attributes={collectionSummary.attributes} />

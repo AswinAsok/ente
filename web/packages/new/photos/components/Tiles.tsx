@@ -39,6 +39,10 @@ interface ItemCardProps {
      * Optional click handler.
      */
     onClick?: () => void;
+    /**
+     * Optional context menu handler.
+     */
+    onContextMenu?: React.MouseEventHandler<HTMLElement>;
 }
 
 /**
@@ -61,6 +65,7 @@ export const ItemCard: React.FC<React.PropsWithChildren<ItemCardProps>> = ({
     coverFaceID,
     isScrolling,
     onClick,
+    onContextMenu,
     children,
 }) => {
     const [coverImageURL, setCoverImageURL] = useState<string | undefined>();
@@ -89,7 +94,7 @@ export const ItemCard: React.FC<React.PropsWithChildren<ItemCardProps>> = ({
     }, [coverFile, coverFaceID, isScrolling]);
 
     return (
-        <TileComponent {...{ onClick }}>
+        <TileComponent {...{ onClick, onContextMenu }}>
             {coverFile?.metadata.hasStaticThumbnail ? (
                 <StaticThumbnail fileType={coverFile.metadata.fileType} />
             ) : coverImageURL ? (

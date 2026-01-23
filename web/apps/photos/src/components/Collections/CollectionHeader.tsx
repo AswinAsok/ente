@@ -3,18 +3,8 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import ArchiveOutlinedIcon from "@mui/icons-material/ArchiveOutlined";
 import CheckIcon from "@mui/icons-material/Check";
 import DeleteOutlinedIcon from "@mui/icons-material/DeleteOutlined";
-import EditIcon from "@mui/icons-material/Edit";
 import LinkIcon from "@mui/icons-material/Link";
-import LogoutIcon from "@mui/icons-material/Logout";
-import MapOutlinedIcon from "@mui/icons-material/MapOutlined";
 import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
-import PushPinIcon from "@mui/icons-material/PushPin";
-import PushPinOutlinedIcon from "@mui/icons-material/PushPinOutlined";
-import SortIcon from "@mui/icons-material/Sort";
-import TvIcon from "@mui/icons-material/Tv";
-import UnarchiveIcon from "@mui/icons-material/Unarchive";
-import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined";
-import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import { Box, IconButton, Menu, Stack, Tooltip } from "@mui/material";
 import { SpacedRow } from "ente-base/components/containers";
 import { ActivityIndicator } from "ente-base/components/mui/ActivityIndicator";
@@ -23,50 +13,27 @@ import {
     OverflowMenuOption,
 } from "ente-base/components/OverflowMenu";
 import { SingleInputDialog } from "ente-base/components/SingleInputDialog";
-import { useModalVisibility } from "ente-base/components/utils/modal";
-import { useBaseContext } from "ente-base/context";
 import type { AddSaveGroup } from "ente-gallery/components/utils/save-groups";
-import { downloadAndSaveCollectionFiles } from "ente-gallery/services/save";
-import { uniqueFilesByID } from "ente-gallery/utils/file";
-import { CollectionOrder, type Collection } from "ente-media/collection";
-import { ItemVisibility } from "ente-media/file-metadata";
+import type { Collection } from "ente-media/collection";
 import type { RemotePullOpts } from "ente-new/photos/components/gallery";
 import {
     GalleryItemsHeaderAdapter,
     GalleryItemsSummary,
 } from "ente-new/photos/components/gallery/ListHeader";
 import { StarIcon } from "ente-new/photos/components/icons/StarIcon";
-import { useSettingsSnapshot } from "ente-new/photos/components/utils/use-snapshot";
-import {
-    cleanUncategorized,
-    defaultHiddenCollectionUserFacingName,
-    deleteCollection,
-    findDefaultHiddenCollectionIDs,
-    isHiddenCollection,
-    leaveSharedCollection,
-    renameCollection,
-    updateCollectionOrder,
-    updateCollectionSortOrder,
-    updateCollectionVisibility,
-    updateShareeCollectionOrder,
-} from "ente-new/photos/services/collection";
-import {
-    PseudoCollectionID,
-    type CollectionSummary,
-    type CollectionSummaryType,
+import type {
+    CollectionSummary,
+    CollectionSummaryType,
 } from "ente-new/photos/services/collection-summary";
-import {
-    savedCollectionFiles,
-    savedCollections,
-} from "ente-new/photos/services/photos-fdb";
-import { updateMapEnabled } from "ente-new/photos/services/settings";
-import { emptyTrash } from "ente-new/photos/services/trash";
-import { usePhotosAppContext } from "ente-new/photos/types/context";
 import { t } from "i18next";
-import React, { useCallback, useRef } from "react";
-import { Trans } from "react-i18next";
+import React, { useRef } from "react";
 import type { FileListWithViewerProps } from "../FileListWithViewer";
 import { CollectionMapDialog } from "./CollectionMapDialog";
+import {
+    DownloadIcon,
+    ShareIcon,
+    useCollectionMenu,
+} from "./CollectionMenu";
 
 export interface CollectionHeaderProps
     extends Pick<
@@ -158,532 +125,31 @@ const CollectionHeaderOptions: React.FC<CollectionHeaderProps> = ({
     onSelectCollection,
     onSelectPerson,
 }) => {
-    const { showMiniDialog, onGenericError } = useBaseContext();
-    const { showLoadingBar, hideLoadingBar, showNotification } =
-        usePhotosAppContext();
-    const { mapEnabled, isInternalUser } = useSettingsSnapshot();
     const overflowMenuIconRef = useRef<SVGSVGElement | null>(null);
 
-    const { show: showSortOrderMenu, props: sortOrderMenuVisibilityProps } =
-        useModalVisibility();
-    const { show: showAlbumNameInput, props: albumNameInputVisibilityProps } =
-        useModalVisibility();
-    const { show: showMapDialog, props: mapDialogVisibilityProps } =
-        useModalVisibility();
-
-    const { type: collectionSummaryType, fileCount } = collectionSummary;
-
-    /**
-     * Return a new function by wrapping an async function in an error handler,
-     * showing the global loading bar when the function runs, and syncing with
-     * remote on completion.
-     */
-    const wrap = useCallback(
-        (f: () => Promise<void>) => {
-            const wrapped = async () => {
-                showLoadingBar();
-                try {
-                    await f();
-                } catch (e) {
-                    onGenericError(e);
-                } finally {
-                    void onRemotePull({ silent: true });
-                    hideLoadingBar();
-                }
-            };
-            return (): void => void wrapped();
-        },
-        [showLoadingBar, hideLoadingBar, onGenericError, onRemotePull],
-    );
-
-    const handleRenameCollection = useCallback(
-        async (newName: string) => {
-            if (!activeCollection) return;
-            if (activeCollection.name !== newName) {
-                await renameCollection(activeCollection, newName);
-                void onRemotePull({ silent: true });
-            }
-        },
-        [activeCollection, onRemotePull],
-    );
-
-    const hasAlbumFiles = fileCount > 0;
-
-    const confirmDeleteCollection = () => {
-        if (hasAlbumFiles) {
-            showMiniDialog({
-                title: t("delete_album_title"),
-                message: (
-                    <Trans
-                        i18nKey={"delete_album_message"}
-                        components={{
-                            a: (
-                                <Box
-                                    component={"span"}
-                                    sx={{ color: "text.base" }}
-                                />
-                            ),
-                        }}
-                    />
-                ),
-                continue: {
-                    text: t("keep_photos"),
-                    color: "primary",
-                    action: deleteCollectionButKeepFiles,
-                },
-                secondary: {
-                    text: t("delete_photos"),
-                    color: "critical",
-                    action: deleteCollectionAlongWithFiles,
-                },
-            });
-            return;
-        }
-
-        showMiniDialog({
-            title: t("delete_album_title"),
-            message: (
-                <Trans
-                    i18nKey={"delete_album_message_no_photos"}
-                    components={{
-                        a: (
-                            <Box
-                                component={"span"}
-                                sx={{ color: "text.base" }}
-                            />
-                        ),
-                    }}
-                />
-            ),
-            continue: {
-                text: t("delete_album"),
-                color: "critical",
-                action: deleteCollectionAlongWithFiles,
-            },
-        });
-    };
-
-    const deleteCollectionAlongWithFiles = wrap(async () => {
-        if (!activeCollection) return;
-        await deleteCollection(activeCollection.id);
-        setActiveCollectionID(PseudoCollectionID.all);
+    const {
+        menuItems,
+        albumNameInputVisibilityProps,
+        sortOrderMenuVisibilityProps,
+        mapDialogVisibilityProps,
+        sortAsc,
+        handleRenameCollection,
+        changeSortOrderAsc,
+        changeSortOrderDesc,
+        confirmEmptyTrash,
+        confirmCleanUncategorized,
+        downloadCollection,
+    } = useCollectionMenu({
+        collectionSummary,
+        collection: activeCollection,
+        setActiveCollectionID,
+        onRemotePull,
+        onCollectionShare,
+        onCollectionCast,
+        onAddSaveGroup,
+        isCollectionDownloadInProgress: isActiveCollectionDownloadInProgress,
+        isActiveCollection: true,
     });
-
-    const deleteCollectionButKeepFiles = wrap(async () => {
-        if (!activeCollection) return;
-        await deleteCollection(activeCollection.id, { keepFiles: true });
-        setActiveCollectionID(PseudoCollectionID.all);
-    });
-
-    const confirmEmptyTrash = () =>
-        showMiniDialog({
-            title: t("empty_trash_title"),
-            message: t("empty_trash_message"),
-            continue: {
-                text: t("empty_trash"),
-                color: "critical",
-                action: doEmptyTrash,
-            },
-        });
-
-    const doEmptyTrash = wrap(async () => {
-        await emptyTrash();
-        setActiveCollectionID(PseudoCollectionID.all);
-    });
-
-    const confirmCleanUncategorized = () =>
-        showMiniDialog({
-            title: t("clean_uncategorized"),
-            message: t("clean_uncategorized_message"),
-            continue: {
-                text: t("clean_uncategorized"),
-                color: "primary",
-                action: doCleanUncategorized,
-            },
-        });
-
-    const doCleanUncategorized = wrap(async () => {
-        if (!activeCollection) return;
-        const count = await cleanUncategorized(activeCollection);
-        showNotification({
-            color: "secondary",
-            title: t("clean_uncategorized_success", { count }),
-        });
-    });
-
-    const _downloadCollection = async () => {
-        if (isActiveCollectionDownloadInProgress()) return;
-
-        if (collectionSummaryType == "hiddenItems") {
-            const defaultHiddenCollectionsIDs = findDefaultHiddenCollectionIDs(
-                await savedCollections(),
-            );
-            const collectionFiles = await savedCollectionFiles();
-            const defaultHiddenCollectionFiles = uniqueFilesByID(
-                collectionFiles.filter((file) =>
-                    defaultHiddenCollectionsIDs.has(file.collectionID),
-                ),
-            );
-            await downloadAndSaveCollectionFiles(
-                defaultHiddenCollectionUserFacingName,
-                PseudoCollectionID.hiddenItems,
-                defaultHiddenCollectionFiles,
-                true,
-                onAddSaveGroup,
-            );
-        } else if (activeCollection) {
-            await downloadAndSaveCollectionFiles(
-                activeCollection.name,
-                activeCollection.id,
-                (await savedCollectionFiles()).filter(
-                    (file) => file.collectionID == activeCollection.id,
-                ),
-                isHiddenCollection(activeCollection),
-                onAddSaveGroup,
-            );
-        }
-    };
-
-    const downloadCollection = () =>
-        void _downloadCollection().catch(onGenericError);
-
-    const archiveAlbum = wrap(async () => {
-        if (!activeCollection) return;
-        await updateCollectionVisibility(
-            activeCollection,
-            ItemVisibility.archived,
-        );
-    });
-
-    const unarchiveAlbum = wrap(async () => {
-        if (!activeCollection) return;
-        await updateCollectionVisibility(
-            activeCollection,
-            ItemVisibility.visible,
-        );
-    });
-
-    const confirmLeaveSharedAlbum = () =>
-        showMiniDialog({
-            title: t("leave_shared_album_title"),
-            message: t("leave_shared_album_message"),
-            continue: {
-                text: t("leave_shared_album"),
-                color: "critical",
-                action: leaveSharedAlbum,
-            },
-        });
-
-    const leaveSharedAlbum = wrap(async () => {
-        if (!activeCollection) return;
-        await leaveSharedCollection(activeCollection.id);
-        setActiveCollectionID(PseudoCollectionID.all);
-    });
-
-    const pinAlbum = wrap(async () => {
-        if (!activeCollection) return;
-        await updateCollectionOrder(activeCollection, CollectionOrder.pinned);
-    });
-
-    const unpinAlbum = wrap(async () => {
-        if (!activeCollection) return;
-        await updateCollectionOrder(activeCollection, CollectionOrder.default);
-    });
-
-    const pinSharedAlbum = wrap(async () => {
-        if (!activeCollection) return;
-        await updateShareeCollectionOrder(
-            activeCollection,
-            CollectionOrder.pinned,
-        );
-    });
-
-    const unpinSharedAlbum = wrap(async () => {
-        if (!activeCollection) return;
-        await updateShareeCollectionOrder(
-            activeCollection,
-            CollectionOrder.default,
-        );
-    });
-
-    const hideAlbum = wrap(async () => {
-        if (!activeCollection) return;
-        await updateCollectionVisibility(
-            activeCollection,
-            ItemVisibility.hidden,
-        );
-        setActiveCollectionID(PseudoCollectionID.all);
-    });
-
-    const unhideAlbum = wrap(async () => {
-        if (!activeCollection) return;
-        await updateCollectionVisibility(
-            activeCollection,
-            ItemVisibility.visible,
-        );
-        setActiveCollectionID(PseudoCollectionID.hiddenItems);
-    });
-
-    const changeSortOrderAsc = wrap(async () => {
-        if (!activeCollection) return;
-        await updateCollectionSortOrder(activeCollection, true);
-    });
-
-    const changeSortOrderDesc = wrap(async () => {
-        if (!activeCollection) return;
-        await updateCollectionSortOrder(activeCollection, false);
-    });
-
-    const handleShowMap = useCallback(async () => {
-        if (!mapEnabled) {
-            try {
-                await updateMapEnabled(true);
-            } catch (e) {
-                onGenericError(e);
-                return;
-            }
-        }
-        showMapDialog();
-    }, [mapEnabled, onGenericError, showMapDialog]);
-
-    let menuOptions: React.ReactNode[] = [];
-    // MUI doesn't let us use fragments to pass multiple menu items, so we need
-    // to instead put them in an array. This also necessitates giving each a
-    // unique key.
-    switch (collectionSummaryType) {
-        case "trash":
-            menuOptions = [
-                <EmptyTrashOption key="trash" onClick={confirmEmptyTrash} />,
-            ];
-            break;
-
-        case "userFavorites":
-            menuOptions = [
-                fileCount && (
-                    <DownloadOption
-                        key="download"
-                        isDownloadInProgress={
-                            isActiveCollectionDownloadInProgress
-                        }
-                        onClick={downloadCollection}
-                    >
-                        {t("download_favorites")}
-                    </DownloadOption>
-                ),
-                <OverflowMenuOption
-                    key="share"
-                    onClick={onCollectionShare}
-                    startIcon={<ShareIcon />}
-                >
-                    {t("share_favorites")}
-                </OverflowMenuOption>,
-                <OverflowMenuOption
-                    key="cast"
-                    startIcon={<TvIcon />}
-                    onClick={onCollectionCast}
-                >
-                    {t("cast_to_tv")}
-                </OverflowMenuOption>,
-            ];
-            break;
-
-        case "uncategorized":
-            // Quick options (download + clean) are shown instead of a menu
-            break;
-
-        case "hiddenItems":
-            menuOptions = [
-                fileCount && (
-                    <DownloadOption
-                        key="download-hidden"
-                        onClick={downloadCollection}
-                    >
-                        {t("download_hidden_items")}
-                    </DownloadOption>
-                ),
-            ];
-            break;
-
-        case "sharedIncoming":
-            menuOptions = [
-                // Pin/Unpin for shared incoming collections
-                collectionSummary.attributes.has("shareePinned") ? (
-                    <OverflowMenuOption
-                        key="unpin"
-                        onClick={unpinSharedAlbum}
-                        startIcon={<PushPinOutlinedIcon />}
-                    >
-                        {t("unpin_album")}
-                    </OverflowMenuOption>
-                ) : (
-                    <OverflowMenuOption
-                        key="pin"
-                        onClick={pinSharedAlbum}
-                        startIcon={<PushPinIcon />}
-                    >
-                        {t("pin_album")}
-                    </OverflowMenuOption>
-                ),
-                collectionSummary.attributes.has("archived") ? (
-                    <OverflowMenuOption
-                        key="unarchive"
-                        onClick={unarchiveAlbum}
-                        startIcon={<UnarchiveIcon />}
-                    >
-                        {t("unarchive_album")}
-                    </OverflowMenuOption>
-                ) : (
-                    <OverflowMenuOption
-                        key="archive"
-                        onClick={archiveAlbum}
-                        startIcon={<ArchiveOutlinedIcon />}
-                    >
-                        {t("archive_album")}
-                    </OverflowMenuOption>
-                ),
-                isInternalUser &&
-                    (activeCollection ? (
-                        isHiddenCollection(activeCollection) ? (
-                            <OverflowMenuOption
-                                key="unhide"
-                                onClick={unhideAlbum}
-                                startIcon={<VisibilityOutlinedIcon />}
-                            >
-                                {t("unhide_collection")}
-                            </OverflowMenuOption>
-                        ) : (
-                            <OverflowMenuOption
-                                key="hide"
-                                onClick={hideAlbum}
-                                startIcon={<VisibilityOffOutlinedIcon />}
-                            >
-                                {t("hide_collection")}
-                            </OverflowMenuOption>
-                        )
-                    ) : undefined),
-                <OverflowMenuOption
-                    key="leave"
-                    startIcon={<LogoutIcon />}
-                    onClick={confirmLeaveSharedAlbum}
-                >
-                    {t("leave_album")}
-                </OverflowMenuOption>,
-                <OverflowMenuOption
-                    key="cast"
-                    startIcon={<TvIcon />}
-                    onClick={onCollectionCast}
-                >
-                    {t("cast_album_to_tv")}
-                </OverflowMenuOption>,
-            ];
-            break;
-
-        default:
-            menuOptions = [
-                <OverflowMenuOption
-                    key="rename"
-                    onClick={showAlbumNameInput}
-                    startIcon={<EditIcon />}
-                >
-                    {t("rename_album")}
-                </OverflowMenuOption>,
-                <OverflowMenuOption
-                    key="sort"
-                    onClick={showSortOrderMenu}
-                    startIcon={<SortIcon />}
-                >
-                    {t("sort_by")}
-                </OverflowMenuOption>,
-                shouldShowMapOption(collectionSummary) && (
-                    <OverflowMenuOption
-                        key="map"
-                        onClick={handleShowMap}
-                        startIcon={<MapOutlinedIcon />}
-                    >
-                        {t("map")}
-                    </OverflowMenuOption>
-                ),
-                collectionSummary.attributes.has("pinned") ? (
-                    <OverflowMenuOption
-                        key="unpin"
-                        onClick={unpinAlbum}
-                        startIcon={<PushPinOutlinedIcon />}
-                    >
-                        {t("unpin_album")}
-                    </OverflowMenuOption>
-                ) : (
-                    <OverflowMenuOption
-                        key="pin"
-                        onClick={pinAlbum}
-                        startIcon={<PushPinIcon />}
-                    >
-                        {t("pin_album")}
-                    </OverflowMenuOption>
-                ),
-                ...(!activeCollection || !isHiddenCollection(activeCollection)
-                    ? [
-                          collectionSummary.attributes.has("archived") ? (
-                              <OverflowMenuOption
-                                  key="unarchive"
-                                  onClick={unarchiveAlbum}
-                                  startIcon={<UnarchiveIcon />}
-                              >
-                                  {t("unarchive_album")}
-                              </OverflowMenuOption>
-                          ) : (
-                              <OverflowMenuOption
-                                  key="archive"
-                                  onClick={archiveAlbum}
-                                  startIcon={<ArchiveOutlinedIcon />}
-                              >
-                                  {t("archive_album")}
-                              </OverflowMenuOption>
-                          ),
-                      ]
-                    : []),
-                activeCollection && isHiddenCollection(activeCollection) ? (
-                    <OverflowMenuOption
-                        key="unhide"
-                        onClick={unhideAlbum}
-                        startIcon={<VisibilityOutlinedIcon />}
-                    >
-                        {t("unhide_collection")}
-                    </OverflowMenuOption>
-                ) : (
-                    <OverflowMenuOption
-                        key="hide"
-                        onClick={hideAlbum}
-                        startIcon={<VisibilityOffOutlinedIcon />}
-                    >
-                        {t("hide_collection")}
-                    </OverflowMenuOption>
-                ),
-                <OverflowMenuOption
-                    key="delete"
-                    startIcon={<DeleteOutlinedIcon />}
-                    onClick={confirmDeleteCollection}
-                >
-                    {t("delete_album")}
-                </OverflowMenuOption>,
-                <OverflowMenuOption
-                    key="share"
-                    onClick={onCollectionShare}
-                    startIcon={<ShareIcon />}
-                >
-                    {t("share_album")}
-                </OverflowMenuOption>,
-                <OverflowMenuOption
-                    key="cast"
-                    startIcon={<TvIcon />}
-                    onClick={onCollectionCast}
-                >
-                    {t("cast_album_to_tv")}
-                </OverflowMenuOption>,
-            ];
-            break;
-    }
-
-    const validMenuOptions = menuOptions.filter((o) => !!o);
 
     return (
         <Box sx={{ display: "inline-flex", gap: "16px" }}>
@@ -695,20 +161,32 @@ const CollectionHeaderOptions: React.FC<CollectionHeaderProps> = ({
                 onShareClick={onCollectionShare}
                 onCleanUncategorizedClick={confirmCleanUncategorized}
             />
-            {validMenuOptions.length > 0 && (
+            {menuItems.length > 0 && (
                 <OverflowMenu
                     ariaID="collection-options"
                     triggerButtonIcon={
                         <MoreHorizIcon ref={overflowMenuIconRef} />
                     }
                 >
-                    {validMenuOptions}
+                    {menuItems.map((item) => (
+                        <OverflowMenuOption
+                            key={item.key}
+                            onClick={item.onClick}
+                            startIcon={item.icon}
+                            color={
+                                item.color ??
+                                (item.isDestructive ? "critical" : undefined)
+                            }
+                        >
+                            {item.label}
+                        </OverflowMenuOption>
+                    ))}
                 </OverflowMenu>
             )}
             <CollectionSortOrderMenu
                 {...sortOrderMenuVisibilityProps}
-                overflowMenuIconRef={overflowMenuIconRef}
-                sortAsc={activeCollection?.pubMagicMetadata?.data.asc ?? false}
+                anchorEl={overflowMenuIconRef.current}
+                sortAsc={sortAsc}
                 onAscClick={changeSortOrderAsc}
                 onDescClick={changeSortOrderDesc}
             />
@@ -822,33 +300,9 @@ const showDownloadQuickOption = ({ type, attributes }: CollectionSummary) =>
     attributes.has("favorites") ||
     attributes.has("shared");
 
-const shouldShowMapOption = ({ type, fileCount }: CollectionSummary) =>
-    fileCount > 0 &&
-    type !== "all" &&
-    type !== "archiveItems" &&
-    type !== "trash" &&
-    type !== "hiddenItems";
-
 type DownloadQuickOptionProps = OptionProps & {
     collectionSummary: CollectionSummary;
 };
-
-const DownloadIcon: React.FC = () => (
-    <svg
-        width="22"
-        height="22"
-        viewBox="0 0 24 24"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-    >
-        <path d="M2.99969 17.0002C2.99969 17.9302 2.99969 18.3952 3.10192 18.7767C3.37932 19.8119 4.18796 20.6206 5.22324 20.898C5.60474 21.0002 6.06972 21.0002 6.99969 21.0002L16.9997 21.0002C17.9297 21.0002 18.3947 21.0002 18.7762 20.898C19.8114 20.6206 20.6201 19.8119 20.8975 18.7767C20.9997 18.3952 20.9997 17.9302 20.9997 17.0002" />
-        <path d="M16.4998 11.5002C16.4998 11.5002 13.1856 16.0002 11.9997 16.0002C10.8139 16.0002 7.49976 11.5002 7.49976 11.5002M11.9997 15.0002V3.00016" />
-    </svg>
-);
 
 const DownloadQuickOption: React.FC<DownloadQuickOptionProps> = ({
     collectionSummary: { type },
@@ -919,21 +373,6 @@ interface ShareQuickOptionProps {
     onClick: () => void;
 }
 
-const ShareIcon: React.FC = () => (
-    <svg
-        width="21"
-        height="19"
-        viewBox="0 0 22 20"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-    >
-        <path
-            d="M13.875 8C13.3918 8 13 8.39175 13 8.875C13 9.35825 13.3918 9.75 13.875 9.75V8.875V8ZM13.875 0C13.3918 0 13 0.391751 13 0.875C13 1.35825 13.3918 1.75 13.875 1.75V0.875V0ZM15.875 11C15.3918 11 15 11.3918 15 11.875C15 12.3582 15.3918 12.75 15.875 12.75V11.875V11ZM17.375 18C16.8918 18 16.5 18.3918 16.5 18.875C16.5 19.3582 16.8918 19.75 17.375 19.75V18.875V18ZM11.875 4.875H11C11 6.60089 9.60086 8 7.875 8V8.875V9.75C10.5673 9.75 12.75 7.56739 12.75 4.875H11.875ZM7.875 8.875V8C6.14911 8 4.75 6.60089 4.75 4.875H3.875H3C3 7.56739 5.18261 9.75 7.875 9.75V8.875ZM3.875 4.875H4.75C4.75 3.14911 6.14911 1.75 7.875 1.75V0.875V0C5.18261 0 3 2.18261 3 4.875H3.875ZM7.875 0.875V1.75C9.60086 1.75 11 3.14911 11 4.875H11.875H12.75C12.75 2.18261 10.5673 0 7.875 0V0.875ZM13.875 8.875V9.75C16.5673 9.75 18.75 7.56739 18.75 4.875H17.875H17C17 6.60089 15.6009 8 13.875 8V8.875ZM17.875 4.875H18.75C18.75 2.18261 16.5673 0 13.875 0V0.875V1.75C15.6009 1.75 17 3.14911 17 4.875H17.875ZM9.875 11.875V11H5.875V11.875V12.75H9.875V11.875ZM5.875 11.875V11C2.63033 11 0 13.6304 0 16.875H0.875H1.75C1.75 14.5968 3.59683 12.75 5.875 12.75V11.875ZM0.875 16.875H0C0 18.4629 1.28719 19.75 2.875 19.75V18.875V18C2.25367 18 1.75 17.4963 1.75 16.875H0.875ZM2.875 18.875V19.75H12.875V18.875V18H2.875V18.875ZM12.875 18.875V19.75C14.4628 19.75 15.75 18.4628 15.75 16.875H14.875H14C14 17.4964 13.4964 18 12.875 18V18.875ZM14.875 16.875H15.75C15.75 13.6304 13.1196 11 9.875 11V11.875V12.75C12.1532 12.75 14 14.5968 14 16.875H14.875ZM15.875 11.875V12.75C18.1532 12.75 20 14.5968 20 16.875H20.875H21.75C21.75 13.6304 19.1196 11 15.875 11V11.875ZM20.875 16.875H20C20 17.4964 19.4964 18 18.875 18V18.875V19.75C20.4628 19.75 21.75 18.4628 21.75 16.875H20.875ZM18.875 18.875V18H17.375V18.875V19.75H18.875V18.875Z"
-            fill="currentColor"
-        />
-    </svg>
-);
-
 /** A smaller version of ShareIcon for use in the collection header summary. */
 const SmallShareIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
     <svg
@@ -982,41 +421,10 @@ const ShareQuickOption: React.FC<ShareQuickOptionProps> = ({
     </Tooltip>
 );
 
-const EmptyTrashOption: React.FC<OptionProps> = ({ onClick }) => (
-    <OverflowMenuOption
-        color="critical"
-        startIcon={<DeleteOutlinedIcon />}
-        onClick={onClick}
-    >
-        {t("empty_trash")}
-    </OverflowMenuOption>
-);
-
-type DownloadOptionProps = OptionProps & {
-    isDownloadInProgress?: () => boolean;
-};
-
-const DownloadOption: React.FC<
-    React.PropsWithChildren<DownloadOptionProps>
-> = ({ isDownloadInProgress, onClick, children }) => (
-    <OverflowMenuOption
-        startIcon={
-            isDownloadInProgress?.() ? (
-                <ActivityIndicator size="20px" sx={{ cursor: "not-allowed" }} />
-            ) : (
-                <DownloadIcon />
-            )
-        }
-        onClick={onClick}
-    >
-        {children}
-    </OverflowMenuOption>
-);
-
 interface CollectionSortOrderMenuProps {
     open: boolean;
     onClose: () => void;
-    overflowMenuIconRef: React.RefObject<SVGSVGElement | null>;
+    anchorEl: Element | null | undefined;
     sortAsc: boolean;
     onAscClick: () => void;
     onDescClick: () => void;
@@ -1025,7 +433,7 @@ interface CollectionSortOrderMenuProps {
 const CollectionSortOrderMenu: React.FC<CollectionSortOrderMenuProps> = ({
     open,
     onClose,
-    overflowMenuIconRef,
+    anchorEl,
     sortAsc,
     onAscClick,
     onDescClick,
@@ -1043,7 +451,7 @@ const CollectionSortOrderMenu: React.FC<CollectionSortOrderMenuProps> = ({
     return (
         <Menu
             id="collection-files-sort"
-            anchorEl={overflowMenuIconRef.current}
+            anchorEl={anchorEl}
             open={open}
             onClose={onClose}
             slotProps={{
