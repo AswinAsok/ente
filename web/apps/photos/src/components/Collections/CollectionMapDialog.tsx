@@ -445,13 +445,7 @@ function useMapData(
         };
 
         void loadMapData();
-    }, [
-        open,
-        collectionSummary,
-        activeCollection,
-        onGenericError,
-        loadAllThumbs,
-    ]);
+    }, [open, collectionSummary, activeCollection, onGenericError]);
 
     const removeFiles = useCallback((fileIDs: number[]) => {
         if (!fileIDs.length) return;
@@ -546,14 +540,14 @@ function useMapData(
         };
 
         let index = 0;
-            const worker = async () => {
-                while (index < toFetch.length) {
-                    if (loadIdRef.current !== loadId) return;
-                    const file = toFetch[index++];
-                    if (!file) continue;
-                    try {
-                        const thumb =
-                            await downloadManager.renderableThumbnailURL(file);
+        const worker = async () => {
+            while (index < toFetch.length) {
+                if (loadIdRef.current !== loadId) return;
+                const file = toFetch[index++];
+                if (!file) continue;
+                try {
+                    const thumb =
+                        await downloadManager.renderableThumbnailURL(file);
                     if (thumb) {
                         pendingUpdates.set(file.id, thumb);
                         if (pendingUpdates.size >= THUMBNAIL_BATCH_SIZE) {
@@ -705,6 +699,68 @@ function useVisiblePhotos() {
     const [visiblePhotos, setVisiblePhotos] = useState<JourneyPoint[]>([]);
 
     return { visiblePhotos, setVisiblePhotos };
+}
+
+/**
+ * Loads thumbnails on-demand for visible photos when zoomed in enough
+ * that clusters have expanded to individual markers.
+ */
+function useViewportThumbnailLoader(
+    visiblePhotos: JourneyPoint[],
+    filesByID: Map<number, EnteFile>,
+    thumbByFileID: Map<number, string>,
+    zoomLevel: number,
+    addThumbnails: (newThumbs: Map<number, string>) => void,
+) {
+    const loadedFileIdsRef = useRef<Set<number>>(new Set());
+    const loadingRef = useRef(false);
+
+    useEffect(() => {
+        // Only load when zoomed in enough (clusters expanded)
+        const MIN_ZOOM_FOR_INDIVIDUAL_MARKERS = 12;
+        if (zoomLevel < MIN_ZOOM_FOR_INDIVIDUAL_MARKERS) return;
+        if (loadingRef.current) return;
+
+        const photosNeedingThumbs = visiblePhotos.filter((photo) => {
+            const hasThumb = photo.image || thumbByFileID.has(photo.fileId);
+            const alreadyLoaded = loadedFileIdsRef.current.has(photo.fileId);
+            return !hasThumb && !alreadyLoaded && filesByID.has(photo.fileId);
+        });
+
+        if (photosNeedingThumbs.length === 0) return;
+
+        loadingRef.current = true;
+
+        const loadBatch = async () => {
+            const BATCH_SIZE = 10;
+            for (let i = 0; i < photosNeedingThumbs.length; i += BATCH_SIZE) {
+                const batch = photosNeedingThumbs.slice(i, i + BATCH_SIZE);
+                const newThumbs = new Map<number, string>();
+
+                await Promise.all(
+                    batch.map(async (photo) => {
+                        const file = filesByID.get(photo.fileId);
+                        if (!file) return;
+                        loadedFileIdsRef.current.add(photo.fileId);
+                        try {
+                            const thumb =
+                                await downloadManager.renderableThumbnailURL(
+                                    file,
+                                );
+                            if (thumb) newThumbs.set(photo.fileId, thumb);
+                        } catch {
+                            /* ignore */
+                        }
+                    }),
+                );
+
+                if (newThumbs.size > 0) addThumbnails(newThumbs);
+            }
+            loadingRef.current = false;
+        };
+
+        void loadBatch();
+    }, [visiblePhotos, zoomLevel, filesByID, thumbByFileID, addThumbnails]);
 }
 
 /**
@@ -1096,6 +1152,25 @@ export const CollectionMapDialog: React.FC<CollectionMapDialogProps> = ({
     } = useMapData(open, collectionSummary, activeCollection, onGenericError);
 
     const { visiblePhotos, setVisiblePhotos } = useVisiblePhotos();
+    const [zoomLevel, setZoomLevel] = useState(optimalZoom);
+
+    // Handler that updates both visible photos and zoom level
+    const handleVisiblePhotosChange = useCallback(
+        (photos: JourneyPoint[], zoom: number) => {
+            setVisiblePhotos(photos);
+            setZoomLevel(zoom);
+        },
+        [setVisiblePhotos],
+    );
+
+    // Load thumbnails on-demand when zoomed in and photos become visible
+    useViewportThumbnailLoader(
+        visiblePhotos,
+        filesByID,
+        thumbByFileID,
+        zoomLevel,
+        addThumbnails,
+    );
 
     const {
         favoriteFileIDs,
@@ -1311,7 +1386,7 @@ export const CollectionMapDialog: React.FC<CollectionMapDialogProps> = ({
         onRemoteFilesPull,
         pendingFavoriteUpdates,
         pendingVisibilityUpdates,
-        setVisiblePhotos,
+        handleVisiblePhotosChange,
         collectionNameByID,
         fileNormalCollectionIDs,
         handleMarkTempDeleted,
