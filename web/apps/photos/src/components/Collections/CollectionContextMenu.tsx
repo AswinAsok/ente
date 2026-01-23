@@ -1,4 +1,3 @@
-import CheckIcon from "@mui/icons-material/Check";
 import {
     ListItemIcon,
     ListItemText,
@@ -10,7 +9,7 @@ import { SingleInputDialog } from "ente-base/components/SingleInputDialog";
 import type { Collection } from "ente-media/collection";
 import type { CollectionSummary } from "ente-new/photos/services/collection-summary";
 import { t } from "i18next";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo } from "react";
 import type { CollectionHeaderProps } from "./CollectionHeader";
 import { CollectionMapDialog } from "./CollectionMapDialog";
 import { useCollectionMenu, type CollectionMenuItem } from "./CollectionMenu";
@@ -70,12 +69,8 @@ export const CollectionContextMenu: React.FC<CollectionContextMenuProps> = ({
     const {
         menuItems,
         albumNameInputVisibilityProps,
-        sortOrderMenuVisibilityProps,
         mapDialogVisibilityProps,
-        sortAsc,
         handleRenameCollection,
-        changeSortOrderAsc,
-        changeSortOrderDesc,
     } = useCollectionMenu({
         collectionSummary,
         collection,
@@ -88,59 +83,33 @@ export const CollectionContextMenu: React.FC<CollectionContextMenuProps> = ({
         isActiveCollection,
     });
 
-    const adjustedAnchorPosition = useMemo(() => {
-        if (!anchorPosition) return undefined;
-        const offset = 6;
-        return {
-            top: anchorPosition.top + offset,
-            left: anchorPosition.left + offset,
-        };
-    }, [anchorPosition]);
-
-    const [sortMenuAnchorPosition, setSortMenuAnchorPosition] =
-        useState<ContextMenuPosition | undefined>(undefined);
+    const visibleMenuItems = useMemo(
+        () => menuItems.filter((item) => item.key !== "sort"),
+        [menuItems],
+    );
 
     useEffect(() => {
-        if (open && menuItems.length === 0) onClose();
-    }, [open, menuItems.length, onClose]);
-
-    const handleSortMenuClose = useCallback(() => {
-        sortOrderMenuVisibilityProps.onClose();
-        setSortMenuAnchorPosition(undefined);
-    }, [sortOrderMenuVisibilityProps.onClose, setSortMenuAnchorPosition]);
-
-    const handleSortAscClick = useCallback(() => {
-        changeSortOrderAsc();
-        handleSortMenuClose();
-    }, [changeSortOrderAsc, handleSortMenuClose]);
-
-    const handleSortDescClick = useCallback(() => {
-        changeSortOrderDesc();
-        handleSortMenuClose();
-    }, [changeSortOrderDesc, handleSortMenuClose]);
+        if (open && visibleMenuItems.length === 0) onClose();
+    }, [open, visibleMenuItems.length, onClose]);
 
     const handleMenuItemClick = useCallback(
         (item: CollectionMenuItem) => {
-            if (item.key === "sort" && adjustedAnchorPosition) {
-                setSortMenuAnchorPosition(adjustedAnchorPosition);
-            }
             onClose();
             item.onClick();
         },
-        [adjustedAnchorPosition, onClose],
+        [onClose],
     );
 
-    const isMenuOpen = open && !!adjustedAnchorPosition;
-    const isSortMenuOpen =
-        sortOrderMenuVisibilityProps.open && !!sortMenuAnchorPosition;
+    const isMenuOpen = open && !!anchorPosition;
 
     return (
         <>
             <StyledMenu
                 open={isMenuOpen}
                 onClose={onClose}
+                disableAutoFocusItem
                 anchorReference="anchorPosition"
-                anchorPosition={adjustedAnchorPosition}
+                anchorPosition={anchorPosition}
                 slotProps={{
                     root: {
                         onContextMenu: (e: React.MouseEvent) =>
@@ -148,7 +117,7 @@ export const CollectionContextMenu: React.FC<CollectionContextMenuProps> = ({
                     },
                 }}
             >
-                {menuItems.map((item) => {
+                {visibleMenuItems.map((item) => {
                     const isDestructive =
                         item.color === "critical" || item.isDestructive;
                     return (
@@ -157,7 +126,13 @@ export const CollectionContextMenu: React.FC<CollectionContextMenuProps> = ({
                             onClick={() => handleMenuItemClick(item)}
                             sx={
                                 isDestructive
-                                    ? { color: "critical.main" }
+                                    ? {
+                                          color: "critical.main",
+                                          "&:hover": {
+                                              backgroundColor: "critical.main",
+                                              color: "#fff",
+                                          },
+                                      }
                                     : undefined
                             }
                         >
@@ -168,28 +143,6 @@ export const CollectionContextMenu: React.FC<CollectionContextMenuProps> = ({
                         </StyledMenuItem>
                     );
                 })}
-            </StyledMenu>
-
-            <StyledMenu
-                open={isSortMenuOpen}
-                onClose={handleSortMenuClose}
-                anchorReference="anchorPosition"
-                anchorPosition={sortMenuAnchorPosition}
-                slotProps={{
-                    root: {
-                        onContextMenu: (e: React.MouseEvent) =>
-                            e.preventDefault(),
-                    },
-                }}
-            >
-                <StyledMenuItem onClick={handleSortDescClick}>
-                    <ListItemText>{t("newest_first")}</ListItemText>
-                    {!sortAsc && <CheckIcon sx={{ ml: "auto" }} />}
-                </StyledMenuItem>
-                <StyledMenuItem onClick={handleSortAscClick}>
-                    <ListItemText>{t("oldest_first")}</ListItemText>
-                    {sortAsc && <CheckIcon sx={{ ml: "auto" }} />}
-                </StyledMenuItem>
             </StyledMenu>
 
             <CollectionMapDialog
@@ -222,18 +175,34 @@ export const CollectionContextMenu: React.FC<CollectionContextMenuProps> = ({
 
 const StyledMenu = styled(Menu)(({ theme }) => ({
     "& .MuiPaper-root": {
-        minWidth: 160,
-        borderRadius: 6,
-        boxShadow: theme.shadows[6],
+        backgroundColor: "#1f1f1f",
+        minWidth: 170,
+        borderRadius: 9,
+        boxShadow: "0 8px 24px rgba(0, 0, 0, 0.35)",
+        marginTop: 4,
     },
     "& .MuiList-root": {
-        paddingBlock: 4,
+        padding: theme.spacing(0.5),
     },
+    ...theme.applyStyles("dark", {
+        "& .MuiPaper-root": {
+            backgroundColor: "#161616",
+            boxShadow: "0 8px 24px rgba(0, 0, 0, 0.6)",
+        },
+    }),
 }));
 
 const StyledMenuItem = styled(MenuItem)(({ theme }) => ({
-    padding: theme.spacing(0.75, 1.5),
-    "& .MuiListItemIcon-root": { minWidth: 28 },
-    "& .MuiSvgIcon-root": { fontSize: "18px" },
-    "& .MuiListItemText-primary": { fontSize: "13px" },
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    padding: theme.spacing(1, 1.5),
+    borderRadius: 7,
+    color: "#f5f5f5",
+    fontSize: 13,
+    "&:hover": { backgroundColor: "rgba(255, 255, 255, 0.08)" },
+    "& .MuiListItemIcon-root": { minWidth: 0, color: "inherit" },
+    "& .MuiListItemText-root": { margin: 0 },
+    "& .MuiListItemText-primary": { color: "inherit", fontSize: "inherit" },
+    "& svg": { fontSize: "16px" },
 }));
