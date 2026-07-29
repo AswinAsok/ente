@@ -16,7 +16,7 @@ const memoriesAppDescription = "Tap to relive with Ente";
 
 function MemoriesAppHead() {
     const previewImage =
-        "https://memories.ente.com/images/memories-meta-new.webp";
+        "https://memories.ente.com/images/see-it-before-gone-meta.png";
 
     return (
         <>
@@ -28,8 +28,8 @@ function MemoriesAppHead() {
                 <meta property="og:image" content={previewImage} />
                 <meta property="og:image:secure_url" content={previewImage} />
                 <meta property="og:image:type" content="image/png" />
-                <meta property="og:image:width" content="720" />
-                <meta property="og:image:height" content="405" />
+                <meta property="og:image:width" content="1440" />
+                <meta property="og:image:height" content="810" />
                 <meta name="twitter:image" content={previewImage} />
             </Head>
         </>
