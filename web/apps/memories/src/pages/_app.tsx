@@ -16,7 +16,7 @@ const memoriesAppDescription = "Tap to relive with Ente";
 
 function MemoriesAppHead() {
     const previewImage =
-        "https://memories.ente.com/images/memories-meta-new.png";
+        "https://memories.ente.com/images/memories-meta-new.webp";
 
     return (
         <>
