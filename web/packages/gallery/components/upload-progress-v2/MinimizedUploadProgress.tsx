@@ -23,7 +23,13 @@ import {
 } from "./helpers";
 import { useMinimizedUploadDrag } from "./useMinimizedUploadDrag";
 
-export function MinimizedUploadProgress() {
+interface MinimizedUploadProgressProps {
+    statusText?: string;
+}
+
+export function MinimizedUploadProgress({
+    statusText,
+}: MinimizedUploadProgressProps) {
     const context = useUploadProgressContext();
     const { onClose, percentComplete, setExpanded } = context;
     const dragSurfaceRef = useRef<HTMLDivElement>(null);
@@ -67,21 +73,24 @@ export function MinimizedUploadProgress() {
                                 ? t("uploaded_percent", { percent: progress })
                                 : context.uploadPhase == "done"
                                   ? uploadStatusText(context.uploadPhase)
-                                  : t("file_upload")}
+                                  : t(statusText ? "preparing" : "file_upload")}
                         </Typography>
                         <Typography sx={minimizedSubtitleSx}>
                             {showUploadProgress || context.uploadPhase == "done"
                                 ? uploadCountsText(context)
-                                : uploadStatusText(context.uploadPhase)}
+                                : (statusText ??
+                                  uploadStatusText(context.uploadPhase))}
                         </Typography>
                     </Stack>
-                    <IconButton
-                        aria-label={t("expand")}
-                        onClick={handleExpand}
-                        sx={minimizedIconButtonSx}
-                    >
-                        <UnfoldMoreIcon sx={{ fontSize: 22 }} />
-                    </IconButton>
+                    {!statusText && (
+                        <IconButton
+                            aria-label={t("expand")}
+                            onClick={handleExpand}
+                            sx={minimizedIconButtonSx}
+                        >
+                            <UnfoldMoreIcon sx={{ fontSize: 22 }} />
+                        </IconButton>
+                    )}
                     <IconButton
                         aria-label={t("close")}
                         onClick={onClose}

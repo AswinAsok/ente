@@ -213,6 +213,8 @@ interface UploadConfirmation {
     includePartnerSharedFiles: boolean;
 }
 
+const emptyUploadFileNames: UploadFileNames = new Map();
+
 /**
  * Top level component that houses the infrastructure for handling uploads.
  */
@@ -251,6 +253,7 @@ export const Upload: React.FC<UploadProps> = ({
     const [percentComplete, setPercentComplete] = useState(0);
     const [hasLivePhotos, setHasLivePhotos] = useState(false);
     const [prefilledNewAlbumName, setPrefilledNewAlbumName] = useState("");
+    const [isReadingMetadata, setIsReadingMetadata] = useState(false);
     const [uploadConfirmation, setUploadConfirmation] =
         useState<UploadConfirmation>();
 
@@ -866,10 +869,12 @@ export const Upload: React.FC<UploadProps> = ({
         }
 
         try {
+            setIsReadingMetadata(true);
             const { count: fileCount, isTakeout } = await uploadableMediaCount([
                 uploadItemAndPaths,
             ]);
             if (uploadItemsAndPaths.current !== uploadItemAndPaths) return;
+            setIsReadingMetadata(false);
             if (fileCount == 1 && !isTakeout) {
                 void commitUploadToExistingCollection(
                     collection,
@@ -999,10 +1004,12 @@ export const Upload: React.FC<UploadProps> = ({
         }
 
         try {
+            setIsReadingMetadata(true);
             const { count: fileCount, isTakeout } = await uploadableMediaCount([
                 ...collectionNameToUploadItems.values(),
             ]);
             if (uploadItemsAndPaths.current !== uploadItemAndPaths) return;
+            setIsReadingMetadata(false);
             if (fileCount == 1 && !isTakeout) {
                 void commitUploadToNewCollections(
                     uploadItemAndPaths,
@@ -1130,6 +1137,7 @@ export const Upload: React.FC<UploadProps> = ({
     };
 
     const cancelPendingUpload = () => {
+        setIsReadingMetadata(false);
         setUploadConfirmation(undefined);
         uploadItemsAndPaths.current = [];
         onCloseCollectionSelector?.();
@@ -1395,18 +1403,27 @@ export const Upload: React.FC<UploadProps> = ({
             />
             {enableV2 ? (
                 <UploadProgressV2
-                    open={uploadProgressView}
+                    open={isReadingMetadata || uploadProgressView}
                     onClose={closeUploadProgress}
                     percentComplete={percentComplete}
-                    uploadFileNames={uploadFileNames!}
+                    uploadFileNames={uploadFileNames ?? emptyUploadFileNames}
                     uploadCounter={uploadCounter}
-                    uploadPhase={uploadPhase}
+                    uploadPhase={
+                        isReadingMetadata ? "readingMetadata" : uploadPhase
+                    }
+                    minimizedStatusText={
+                        isReadingMetadata
+                            ? t("upload_counting_albums_and_media")
+                            : undefined
+                    }
                     inProgressUploads={inProgressUploads}
                     hasLivePhotos={hasLivePhotos}
                     retryFailed={retryFailed}
                     finishedUploads={finishedUploads}
                     preUploadSkippedFiles={preUploadSkippedFiles}
-                    cancelUploads={cancelUploads}
+                    cancelUploads={
+                        isReadingMetadata ? cancelPendingUpload : cancelUploads
+                    }
                 />
             ) : (
                 <UploadProgress

@@ -70,6 +70,7 @@
     "preparing": "Preparing",
     "processed_counts": "{{count, number}} / {{total, number}}",
     "upload_reading_metadata_files": "Reading metadata files",
+    "upload_counting_albums_and_media": "Counting albums and media",
     "upload_cancelling": "Cancelling remaining uploads",
     "upload_done": "{{count, number}} uploaded",
     "upload_skipped": "{{count, number}} skipped",

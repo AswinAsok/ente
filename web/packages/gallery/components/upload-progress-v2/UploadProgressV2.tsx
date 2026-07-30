@@ -18,6 +18,7 @@ interface UploadProgressProps {
     onClose: () => void;
     uploadCounter: UploadCounter;
     uploadPhase: UploadPhase;
+    minimizedStatusText?: string;
     percentComplete: number;
     retryFailed: () => void;
     inProgressUploads: InProgressUpload[];
@@ -40,6 +41,7 @@ function UploadProgress({
     onClose,
     uploadCounter,
     uploadPhase,
+    minimizedStatusText,
     percentComplete,
     retryFailed,
     uploadFileNames,
@@ -121,7 +123,11 @@ function UploadProgress({
 
     return (
         <UploadProgressContext.Provider value={contextValue}>
-            {expanded ? <UploadProgressDialog /> : <MinimizedUploadProgress />}
+            {expanded ? (
+                <UploadProgressDialog />
+            ) : (
+                <MinimizedUploadProgress statusText={minimizedStatusText} />
+            )}
             <StopUploadConfirmationDialog
                 open={showStopConfirmation}
                 onClose={handleStopConfirmationClose}
