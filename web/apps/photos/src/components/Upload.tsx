@@ -621,7 +621,9 @@ export const Upload: React.FC<UploadProps> = ({
         props.closeUploadTypeSelector();
         props.setLoading(true);
 
-        // Starting a new upload discards any stale pending confirmation.
+        // Starting a new upload discards any stale pending confirmation or
+        // metadata-counting state from the request it supersedes.
+        setIsReadingMetadata(false);
         setUploadConfirmation(undefined);
         setWebFiles([]);
         setDesktopFiles([]);
