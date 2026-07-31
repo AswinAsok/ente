@@ -46,6 +46,7 @@ import { useBaseContext } from "ente-base/context";
 import { nameAndExtension } from "ente-base/file-name";
 import log from "ente-base/log";
 import { saveAsFileAndRevokeObjectURL } from "ente-base/utils/web";
+import { useSaveGroupsActions } from "ente-gallery/components/utils/save-groups";
 import { downloadManager } from "ente-gallery/services/download";
 import type { Collection } from "ente-media/collection";
 import type { EnteFile } from "ente-media/file";
@@ -108,6 +109,7 @@ export const ImageEditorOverlay: React.FC<ImageEditorOverlayProps> = ({
     onSaveEditedCopy,
 }) => {
     const { showMiniDialog } = useBaseContext();
+    const { onAddSaveGroup } = useSaveGroupsActions();
     const titleID = useId();
 
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -474,7 +476,27 @@ export const ImageEditorOverlay: React.FC<ImageEditorOverlayProps> = ({
         if (!canvasRef.current) return;
 
         const f = await getEditedFile();
-        saveAsFileAndRevokeObjectURL(URL.createObjectURL(f), f.name);
+        const updateSaveGroup = onAddSaveGroup({
+            title: f.name,
+            total: 1,
+            includeZipNumber: false,
+            canceller: new AbortController(),
+        });
+
+        try {
+            saveAsFileAndRevokeObjectURL(URL.createObjectURL(f), f.name);
+            updateSaveGroup((group) => ({
+                ...group,
+                success: group.success + 1,
+            }));
+        } catch (e) {
+            log.error("Failed to download edited photo", e);
+            updateSaveGroup((group) => ({
+                ...group,
+                failed: group.failed + 1,
+                failureReason: "file_error",
+            }));
+        }
     };
 
     const saveCopyToEnte = async () => {
