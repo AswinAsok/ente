@@ -474,27 +474,30 @@ export const ImageEditorOverlay: React.FC<ImageEditorOverlayProps> = ({
 
     const downloadEditedPhoto = async () => {
         if (!canvasRef.current) return;
+
+        const fileName = fileFileName(file);
+        const canceller = new AbortController();
+        const updateSaveGroup = onAddSaveGroup({
+            title: fileName,
+            total: 1,
+            canceller,
+        });
+
         try {
             const f = await getEditedFile();
+            if (canceller.signal.aborted) return;
+
+            updateSaveGroup((g) => ({ ...g, title: f.name }));
             const url = URL.createObjectURL(f);
-            const updateSaveGroup = onAddSaveGroup({
-                title: f.name,
-                total: 1,
-                canceller: new AbortController(),
-            });
-            try {
-                saveAsFileAndRevokeObjectURL(url, f.name);
-                updateSaveGroup((g) => ({ ...g, success: g.success + 1 }));
-            } catch (e) {
-                updateSaveGroup((g) => ({
-                    ...g,
-                    failed: g.failed + 1,
-                    failureReason: "file_error",
-                }));
-                throw e;
-            }
+            saveAsFileAndRevokeObjectURL(url, f.name);
+            updateSaveGroup((g) => ({ ...g, success: g.success + 1 }));
         } catch (e) {
             log.error("Failed to download edited photo", e);
+            updateSaveGroup((g) => ({
+                ...g,
+                failed: g.failed + 1,
+                failureReason: "file_error",
+            }));
         }
     };
 
