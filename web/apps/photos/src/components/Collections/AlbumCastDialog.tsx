@@ -66,7 +66,7 @@ export const AlbumCastDialog: React.FC<AlbumCastDialogProps> = ({
  * One of those approaches is to keep the dialog contents in a separate
  * component.
  */
-export const AlbumCastDialogContents: React.FC<AlbumCastDialogProps> = ({
+const AlbumCastDialogContents: React.FC<AlbumCastDialogProps> = ({
     open,
     onClose,
     collection,

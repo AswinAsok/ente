@@ -14,7 +14,7 @@ import { pullFiles } from "./pull";
  *
  * This matches the mobile implementation: 10 MB.
  */
-export const MIN_LARGE_FILE_SIZE = 10 * 1024 * 1024;
+const MIN_LARGE_FILE_SIZE = 10 * 1024 * 1024;
 
 /**
  * Filter type for large files.
@@ -157,12 +157,12 @@ export const deleteSelectedLargeFiles = async (
 /**
  * Sort order for large files list.
  */
-export type SortOrder = "desc" | "asc";
+type SortOrder = "desc" | "asc";
 
 /**
  * State for the large files page.
  */
-export interface LargeFilesState {
+interface LargeFilesState {
     /** Status of the analysis ("loading") process. */
     analysisStatus: undefined | "started" | "failed" | "completed";
     /**
@@ -202,7 +202,7 @@ export interface LargeFilesState {
 /**
  * Actions for the large files reducer.
  */
-export type LargeFilesAction =
+type LargeFilesAction =
     | { type: "analyze" }
     | { type: "analysisFailed" }
     | { type: "analysisCompleted"; largeFiles: LargeFileItem[] }

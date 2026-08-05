@@ -160,7 +160,7 @@ export interface FileListAnnotatedFile {
  *
  * See: [Note: Files in trash pseudo collection have deleteBy]
  */
-export type EnteTrashFile = EnteFile & {
+type EnteTrashFile = EnteFile & {
     /**
      * Timestamp (epoch microseconds) when the trash item (and its corresponding
      * {@link EnteFile}) will be permanently deleted.

@@ -78,7 +78,7 @@ export interface ExportProgress {
 /**
  * The export related settings that are persisted to local storage.
  */
-export interface ExportSettings {
+interface ExportSettings {
     /**
      * The parent folder where the "Ente Photos" folder containing the export
      * will be placed.
@@ -103,7 +103,7 @@ const ExportSettings = z.object({
  *
  * Use {@link saveExportSettings} to update the settings in local storage.
  */
-export const savedExportSettings = () => {
+const savedExportSettings = () => {
     const jsonString = localStorage.getItem("export");
     const json = jsonString ? JSON.parse(jsonString) : undefined;
     return json ? ExportSettings.parse(json) : undefined;
@@ -115,7 +115,7 @@ export const savedExportSettings = () => {
  * This is the setter corresponding to {@link savedExportSettings}.
  * @param exportSettings
  */
-export const saveExportSettings = (exportSettings: ExportSettings) => {
+const saveExportSettings = (exportSettings: ExportSettings) => {
     localStorage.setItem("export", JSON.stringify(exportSettings));
 };
 
@@ -123,7 +123,7 @@ type CollectionExportNames = Record<number, string>;
 
 type FileExportNames = Record<string, string>;
 
-export interface ExportRecord {
+interface ExportRecord {
     /**
      * The version of the export record.
      *
@@ -136,7 +136,7 @@ export interface ExportRecord {
     fileExportNames: FileExportNames;
 }
 
-export const NULL_EXPORT_RECORD: ExportRecord = {
+const NULL_EXPORT_RECORD: ExportRecord = {
     version: 5,
     stage: ExportStage.init,
     // @ts-ignore
@@ -1589,7 +1589,7 @@ const getLivePhotoExportName = (
     videoExportName: string,
 ) => JSON.stringify({ image: imageExportName, video: videoExportName });
 
-export const isLivePhotoExportName = (exportName: string) => {
+const isLivePhotoExportName = (exportName: string) => {
     try {
         JSON.parse(exportName);
         return true;
