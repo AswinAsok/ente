@@ -1,22 +1,22 @@
 // TODO: Audit this file.
+import {
+    AllItemsDialog,
+    AllItemsDialogColumnBreakpoint,
+    AllItemsSearchField,
+} from "@/components/Collections/AllItemsDialog";
 import { CollectionsSortOptions } from "@/components/CollectionsSortOptions";
 import { StarIcon } from "@/components/icons/StarIcon";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import CloseIcon from "@mui/icons-material/Close";
 import PushPinIcon from "@mui/icons-material/PushPin";
-import SearchIcon from "@mui/icons-material/Search";
 import {
     Box,
-    Dialog,
     DialogContent,
     DialogTitle,
     Divider,
-    InputAdornment,
     Paper,
     Snackbar,
     Stack,
-    styled,
-    TextField,
     Tooltip,
     Typography,
     useMediaQuery,
@@ -143,7 +143,7 @@ export const AllAlbums: React.FC<AllAlbums> = ({
 
     return (
         <>
-            <AllAlbumsDialog
+            <AllItemsDialog
                 {...{ open, onClose, fullScreen }}
                 slots={{ transition: SlideUpTransition }}
                 slotProps={{ transition: { onExited: handleExited } }}
@@ -169,7 +169,7 @@ export const AllAlbums: React.FC<AllAlbums> = ({
                     showCreateButton={showCreateButton}
                     onCreateAlbum={showAlbumNameInput}
                 />
-            </AllAlbumsDialog>
+            </AllItemsDialog>
             <SingleInputDialog
                 {...albumNameInputVisibilityProps}
                 variant="v2"
@@ -248,19 +248,6 @@ export const AllAlbums: React.FC<AllAlbums> = ({
     );
 };
 
-const Column3To2Breakpoint = 559;
-
-const AllAlbumsDialog = styled(Dialog)(({ theme }) => ({
-    "& .MuiDialog-container": { justifyContent: "flex-end" },
-    "& .MuiPaper-root": { maxWidth: "494px" },
-    "& .MuiDialogTitle-root": { padding: theme.spacing(2) },
-    "& .MuiDialogContent-root": { padding: theme.spacing(2) },
-    [theme.breakpoints.down(Column3To2Breakpoint)]: {
-        "& .MuiPaper-root": { width: "324px" },
-        "& .MuiDialogContent-root": { padding: 6 },
-    },
-}));
-
 type TitleProps = {
     collectionCount: number;
     totalCount: number;
@@ -313,89 +300,14 @@ const Title: React.FC<TitleProps> = ({
                     <CloseIcon />
                 </FilledIconButton>
             </Stack>
-            <SearchField value={searchTerm} onChange={onSearchChange} />
+            <AllItemsSearchField
+                placeholder={t("albums_search_hint")}
+                value={searchTerm}
+                onChange={onSearchChange}
+            />
         </Stack>
     </DialogTitle>
 );
-
-interface SearchFieldProps {
-    value: string;
-    onChange: (value: string) => void;
-}
-
-const SearchField: React.FC<SearchFieldProps> = ({ value, onChange }) => {
-    const inputRef = useRef<HTMLInputElement>(null);
-
-    const handleClear = () => {
-        onChange("");
-        inputRef.current?.focus();
-    };
-
-    return (
-        <TextField
-            inputRef={inputRef}
-            fullWidth
-            size="small"
-            placeholder={t("albums_search_hint")}
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            autoFocus
-            slotProps={{
-                input: {
-                    startAdornment: (
-                        <InputAdornment position="start">
-                            <SearchIcon />
-                        </InputAdornment>
-                    ),
-                    endAdornment: value && (
-                        <InputAdornment
-                            position="end"
-                            sx={{ marginRight: "0 !important" }}
-                        >
-                            <CloseIcon
-                                fontSize="small"
-                                onClick={handleClear}
-                                sx={{
-                                    color: "stroke.muted",
-                                    cursor: "pointer",
-                                    "&:hover": { color: "text.base" },
-                                }}
-                            />
-                        </InputAdornment>
-                    ),
-                },
-            }}
-            sx={{
-                "& .MuiOutlinedInput-root": {
-                    backgroundColor: "background.searchInput",
-                    borderColor: "transparent",
-                    "&:hover": { borderColor: "accent.light" },
-                    "&.Mui-focused": {
-                        borderColor: "accent.main",
-                        boxShadow: "none",
-                    },
-                },
-                "& .MuiInputBase-input": {
-                    color: "text.base",
-                    paddingTop: "8.5px !important",
-                    paddingBottom: "8.5px !important",
-                },
-                "& .MuiInputAdornment-root": {
-                    color: "stroke.muted",
-                    marginTop: "0 !important",
-                    marginRight: "8px",
-                },
-                "& .MuiOutlinedInput-notchedOutline": {
-                    borderColor: "transparent",
-                },
-                "& .MuiInputBase-input::placeholder": {
-                    color: "text.muted",
-                    opacity: 1,
-                },
-            }}
-        />
-    );
-};
 
 const CollectionRowItemSize = 154;
 
@@ -473,7 +385,9 @@ const AllAlbumsContent: React.FC<AllAlbumsContentProps> = ({
     showCreateButton,
     onCreateAlbum,
 }) => {
-    const isTwoColumn = useMediaQuery(`(width < ${Column3To2Breakpoint}px)`);
+    const isTwoColumn = useMediaQuery(
+        `(width < ${AllItemsDialogColumnBreakpoint}px)`,
+    );
 
     const refreshInProgress = useRef(false);
     const shouldRefresh = useRef(false);

@@ -1,3 +1,8 @@
+import {
+    AllItemsDialog,
+    AllItemsDialogColumnBreakpoint,
+    AllItemsSearchField,
+} from "@/components/Collections/AllItemsDialog";
 import { PeopleSortOptions } from "@/components/PeopleSortOptions";
 import { useWrapAsyncOperation } from "@/components/utils/use-wrap-async";
 import { sortPeople, type PeopleSortBy } from "@/utils/people-sort";
@@ -13,7 +18,6 @@ import HideImageOutlinedIcon from "@mui/icons-material/HideImageOutlined";
 import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
 import PushPinIcon from "@mui/icons-material/PushPin";
 import PushPinOutlinedIcon from "@mui/icons-material/PushPinOutlined";
-import SearchIcon from "@mui/icons-material/Search";
 import {
     Box,
     Button,
@@ -21,9 +25,7 @@ import {
     DialogContent,
     DialogTitle,
     Divider,
-    InputAdornment,
     Stack,
-    TextField,
     Tooltip,
     Typography,
     styled,
@@ -186,7 +188,7 @@ export const AllPeople: React.FC<AllPeopleProps> = ({
 
     return (
         <>
-            <AllPeopleDialog
+            <AllItemsDialog
                 {...{ open, onClose, fullScreen }}
                 fullWidth
                 slots={{ transition: SlideUpTransition }}
@@ -217,7 +219,7 @@ export const AllPeople: React.FC<AllPeopleProps> = ({
                     onAddName={setClusterToName}
                     onIgnorePerson={handleIgnorePerson}
                 />
-            </AllPeopleDialog>
+            </AllItemsDialog>
             <SingleInputDialog
                 open={!!personToRename}
                 onClose={() => setPersonToRename(undefined)}
@@ -240,7 +242,6 @@ export const AllPeople: React.FC<AllPeopleProps> = ({
     );
 };
 
-const Column3To2Breakpoint = 559;
 const PeopleRowItemSize = 154;
 const ShowMoreFacesButtonHeight = 56;
 const ShowMoreFacesButtonVerticalGap = 16;
@@ -282,17 +283,6 @@ const PeopleListInner = React.forwardRef<
 ));
 
 PeopleListInner.displayName = "PeopleListInner";
-
-const AllPeopleDialog = styled(Dialog)(({ theme }) => ({
-    "& .MuiDialog-container": { justifyContent: "flex-end" },
-    "& .MuiPaper-root": { maxWidth: "494px" },
-    "& .MuiDialogTitle-root": { padding: theme.spacing(2) },
-    "& .MuiDialogContent-root": { padding: theme.spacing(2) },
-    [theme.breakpoints.down(Column3To2Breakpoint)]: {
-        "& .MuiPaper-root": { width: "324px" },
-        "& .MuiDialogContent-root": { padding: 6 },
-    },
-}));
 
 type TitleProps = {
     peopleCount: number;
@@ -337,98 +327,15 @@ const Title: React.FC<TitleProps> = ({
                     <CloseIcon />
                 </FilledIconButton>
             </Stack>
-            <SearchField value={searchTerm} onChange={onSearchChange} />
+            <AllItemsSearchField
+                placeholder={`${t("search")} ${t("people").toLowerCase()}...`}
+                value={searchTerm}
+                onChange={onSearchChange}
+                selectOnMount
+            />
         </Stack>
     </DialogTitle>
 );
-
-interface SearchFieldProps {
-    value: string;
-    onChange: (value: string) => void;
-}
-
-const SearchField: React.FC<SearchFieldProps> = ({ value, onChange }) => {
-    const inputRef = useRef<HTMLInputElement>(null);
-
-    useEffect(() => {
-        const timeout = window.setTimeout(() => {
-            inputRef.current?.focus();
-            inputRef.current?.select();
-        }, 0);
-
-        return () => window.clearTimeout(timeout);
-    }, []);
-
-    const handleClear = () => {
-        onChange("");
-        inputRef.current?.focus();
-    };
-
-    return (
-        <TextField
-            inputRef={inputRef}
-            fullWidth
-            size="small"
-            placeholder={`${t("search")} ${t("people").toLowerCase()}...`}
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            autoFocus
-            slotProps={{
-                input: {
-                    startAdornment: (
-                        <InputAdornment position="start">
-                            <SearchIcon />
-                        </InputAdornment>
-                    ),
-                    endAdornment: value && (
-                        <InputAdornment
-                            position="end"
-                            sx={{ marginRight: "0 !important" }}
-                        >
-                            <CloseIcon
-                                fontSize="small"
-                                onClick={handleClear}
-                                sx={{
-                                    color: "stroke.muted",
-                                    cursor: "pointer",
-                                    "&:hover": { color: "text.base" },
-                                }}
-                            />
-                        </InputAdornment>
-                    ),
-                },
-            }}
-            sx={{
-                "& .MuiOutlinedInput-root": {
-                    backgroundColor: "background.searchInput",
-                    borderColor: "transparent",
-                    "&:hover": { borderColor: "accent.light" },
-                    "&.Mui-focused": {
-                        borderColor: "accent.main",
-                        boxShadow: "none",
-                    },
-                },
-                "& .MuiInputBase-input": {
-                    color: "text.base",
-                    paddingTop: "8.5px !important",
-                    paddingBottom: "8.5px !important",
-                },
-                "& .MuiInputAdornment-root": {
-                    color: "stroke.muted",
-                    marginTop: "0 !important",
-                    marginRight: "8px",
-                },
-                "& .MuiOutlinedInput-notchedOutline": {
-                    borderColor: "transparent",
-                },
-                "& .MuiInputBase-input::placeholder": {
-                    color: "text.muted",
-                    opacity: 1,
-                },
-            }}
-        />
-    );
-};
 
 interface AllPeopleContentProps {
     primaryPeople: Person[];
@@ -582,7 +489,9 @@ const AllPeopleContent: React.FC<AllPeopleContentProps> = ({
     onAddName,
     onIgnorePerson,
 }) => {
-    const isTwoColumn = useMediaQuery(`(width < ${Column3To2Breakpoint}px)`);
+    const isTwoColumn = useMediaQuery(
+        `(width < ${AllItemsDialogColumnBreakpoint}px)`,
+    );
     const columns = isTwoColumn ? 2 : 3;
     const listOuterRef = useRef<HTMLDivElement>(null);
 

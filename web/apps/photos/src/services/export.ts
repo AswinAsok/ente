@@ -47,6 +47,31 @@ export const CustomError = {
     EXPORT_FOLDER_DOES_NOT_EXIST: "export folder does not exist",
 };
 
+const exportErrorMessage = (error: unknown) =>
+    typeof error == "object" &&
+    error !== null &&
+    "message" in error &&
+    typeof error.message == "string"
+        ? error.message
+        : undefined;
+
+const isFatalExportItemError = (error: unknown) => {
+    const message = exportErrorMessage(error);
+    return (
+        message === CustomError.UPDATE_EXPORTED_RECORD_FAILED ||
+        message === CustomError.EXPORT_FOLDER_DOES_NOT_EXIST ||
+        message === CustomError.EXPORT_STOPPED
+    );
+};
+
+const shouldLogExportOperationError = (error: unknown) => {
+    const message = exportErrorMessage(error);
+    return (
+        message !== CustomError.EXPORT_FOLDER_DOES_NOT_EXIST &&
+        message !== CustomError.EXPORT_STOPPED
+    );
+};
+
 const exportRecordFileName = "export_status.json";
 
 const exportDirectoryName = "Ente Photos";
@@ -550,27 +575,13 @@ class ExportService {
                     );
                 } catch (e) {
                     log.error("collectionRenamer failed a collection", e);
-                    if (
-                        // @ts-ignore
-                        e.message ===
-                            CustomError.UPDATE_EXPORTED_RECORD_FAILED ||
-                        // @ts-ignore
-                        e.message ===
-                            CustomError.EXPORT_FOLDER_DOES_NOT_EXIST ||
-                        // @ts-ignore
-                        e.message === CustomError.EXPORT_STOPPED
-                    ) {
+                    if (isFatalExportItemError(e)) {
                         throw e;
                     }
                 }
             }
         } catch (e) {
-            if (
-                // @ts-ignore
-                e.message !== CustomError.EXPORT_FOLDER_DOES_NOT_EXIST &&
-                // @ts-ignore
-                e.message !== CustomError.EXPORT_STOPPED
-            ) {
+            if (shouldLogExportOperationError(e)) {
                 log.error("collectionRenamer failed", e);
             }
             throw e;
@@ -640,27 +651,13 @@ class ExportService {
                     );
                 } catch (e) {
                     log.error("collectionRemover failed a collection", e);
-                    if (
-                        // @ts-ignore
-                        e.message ===
-                            CustomError.UPDATE_EXPORTED_RECORD_FAILED ||
-                        // @ts-ignore
-                        e.message ===
-                            CustomError.EXPORT_FOLDER_DOES_NOT_EXIST ||
-                        // @ts-ignore
-                        e.message === CustomError.EXPORT_STOPPED
-                    ) {
+                    if (isFatalExportItemError(e)) {
                         throw e;
                     }
                 }
             }
         } catch (e) {
-            if (
-                // @ts-ignore
-                e.message !== CustomError.EXPORT_FOLDER_DOES_NOT_EXIST &&
-                // @ts-ignore
-                e.message !== CustomError.EXPORT_STOPPED
-            ) {
+            if (shouldLogExportOperationError(e)) {
                 log.error("collectionRemover failed", e);
             }
             throw e;
@@ -731,27 +728,13 @@ class ExportService {
                 } catch (e) {
                     incrementFailed();
                     log.error(`export failed for a ${fileLogID(file)}`, e);
-                    if (
-                        // @ts-ignore
-                        e.message ===
-                            CustomError.UPDATE_EXPORTED_RECORD_FAILED ||
-                        // @ts-ignore
-                        e.message ===
-                            CustomError.EXPORT_FOLDER_DOES_NOT_EXIST ||
-                        // @ts-ignore
-                        e.message === CustomError.EXPORT_STOPPED
-                    ) {
+                    if (isFatalExportItemError(e)) {
                         throw e;
                     }
                 }
             }
         } catch (e) {
-            if (
-                // @ts-ignore
-                e.message !== CustomError.EXPORT_FOLDER_DOES_NOT_EXIST &&
-                // @ts-ignore
-                e.message !== CustomError.EXPORT_STOPPED
-            ) {
+            if (shouldLogExportOperationError(e)) {
                 log.error("fileExporter failed", e);
             }
             throw e;
@@ -814,27 +797,13 @@ class ExportService {
                     log.info(`Moved file id ${fileUID} to Trash`);
                 } catch (e) {
                     log.error("trashing failed for a file", e);
-                    if (
-                        // @ts-ignore
-                        e.message ===
-                            CustomError.UPDATE_EXPORTED_RECORD_FAILED ||
-                        // @ts-ignore
-                        e.message ===
-                            CustomError.EXPORT_FOLDER_DOES_NOT_EXIST ||
-                        // @ts-ignore
-                        e.message === CustomError.EXPORT_STOPPED
-                    ) {
+                    if (isFatalExportItemError(e)) {
                         throw e;
                     }
                 }
             }
         } catch (e) {
-            if (
-                // @ts-ignore
-                e.message !== CustomError.EXPORT_FOLDER_DOES_NOT_EXIST &&
-                // @ts-ignore
-                e.message !== CustomError.EXPORT_STOPPED
-            ) {
+            if (shouldLogExportOperationError(e)) {
                 log.error("fileTrasher failed", e);
             }
             throw e;
