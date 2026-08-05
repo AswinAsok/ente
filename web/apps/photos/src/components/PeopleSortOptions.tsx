@@ -31,12 +31,9 @@ export const PeopleSortOptions: React.FC<PeopleSortOptionsProps> = ({
 }) => {
     const ariaID = "people-sort";
 
-    // Split the current sort into its category and direction for simpler menu logic.
     const activeCategory = getPeopleSortCategory(activeSortBy);
     const activeAscending = isPeopleSortAscending(activeSortBy);
 
-    // Re-selecting the active category flips its direction; choosing a new
-    // category applies that category's default direction.
     const handleCategoryClick = (
         category: PeopleSortCategory,
         onSelect: (sortBy: PeopleSortBy) => void,
@@ -50,8 +47,6 @@ export const PeopleSortOptions: React.FC<PeopleSortOptionsProps> = ({
         onSelect(nextSortBy);
     };
 
-    // Optionally remove the trigger button background when this control is
-    // rendered inside layouts that already provide their own styling.
     const triggerButtonSxProps: IconButtonProps["sx"] = [
         transparentTriggerButtonBackground
             ? {}
