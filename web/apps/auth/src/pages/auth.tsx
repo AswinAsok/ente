@@ -14,8 +14,8 @@ import {
     useTheme,
 } from "@mui/material";
 import { useColorScheme } from "@mui/material/styles";
-import { sessionExpiredDialogAttributes } from "ente-accounts/components/utils/dialog";
-import { stashRedirect } from "ente-accounts/services/redirect";
+import { sessionExpiredDialogAttributes } from "ente-accounts-rs/components/utils/dialog";
+import { stashRedirect } from "ente-accounts-rs/services/redirect";
 import { EnteLogo } from "ente-base/components/EnteLogo";
 import { LoadingIndicator } from "ente-base/components/loaders";
 import { FocusVisibleButton } from "ente-base/components/mui/FocusVisibleButton";
