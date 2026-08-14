@@ -76,6 +76,7 @@ const App: React.FC<PhotosAppProps> = ({ Component, pageProps }) => {
     const { loadingBarRef, showLoadingBar, hideLoadingBar } = useLoadingBar();
 
     const [watchFolderView, setWatchFolderView] = useState(false);
+    const [isFileViewerOpen, setIsFileViewerOpen] = useState(false);
 
     const logout = useCallback(() => void photosLogout(), []);
 
@@ -146,6 +147,7 @@ const App: React.FC<PhotosAppProps> = ({ Component, pageProps }) => {
             hideLoadingBar,
             watchFolderView,
             setWatchFolderView,
+            setIsFileViewerOpen,
             showNotification,
         }),
         [
@@ -153,6 +155,7 @@ const App: React.FC<PhotosAppProps> = ({ Component, pageProps }) => {
             hideLoadingBar,
             watchFolderView,
             setWatchFolderView,
+            setIsFileViewerOpen,
             showNotification,
         ],
     );
@@ -168,7 +171,11 @@ const App: React.FC<PhotosAppProps> = ({ Component, pageProps }) => {
             <AttributedMiniDialog {...miniDialogProps} />
             <Notification {...notificationProps} />
 
-            {isDesktop && <WindowTitlebar>{title}</WindowTitlebar>}
+            {isDesktop && (
+                <WindowTitlebar {...{ isFileViewerOpen }}>
+                    {title}
+                </WindowTitlebar>
+            )}
             <BaseContext value={baseContext}>
                 <PhotosAppContext value={appContext}>
                     {!isI18nReady ? (
@@ -240,15 +247,19 @@ const DesktopMainContent: React.FC<MainContentProps> = ({
     );
 };
 
-const WindowTitlebar: React.FC<React.PropsWithChildren> = ({ children }) => {
+const WindowTitlebar: React.FC<
+    React.PropsWithChildren<{ isFileViewerOpen: boolean }>
+> = ({ children, isFileViewerOpen }) => {
     const { mode, systemMode } = useColorScheme();
     const resolvedMode = mode == "system" ? systemMode : mode;
 
     useEffect(() => {
         if (resolvedMode) {
-            globalThis.electron?.setTitleBarOverlay(resolvedMode == "dark");
+            globalThis.electron?.setTitleBarOverlay(
+                isFileViewerOpen || resolvedMode == "dark",
+            );
         }
-    }, [resolvedMode]);
+    }, [isFileViewerOpen, resolvedMode]);
 
     return (
         <WindowTitlebarArea>
