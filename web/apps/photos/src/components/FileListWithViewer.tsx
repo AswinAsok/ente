@@ -168,6 +168,8 @@ export const FileListWithViewer: React.FC<FileListWithViewerProps> = ({
         [onSetOpenFileViewer, setIsFileViewerOpen],
     );
 
+    useEffect(() => () => setIsFileViewerOpen?.(false), [setIsFileViewerOpen]);
+
     useEffect(() => {
         if (pendingFileIndex !== undefined) {
             setCurrentIndex(pendingFileIndex);

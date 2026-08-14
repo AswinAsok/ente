@@ -167,7 +167,8 @@ const createMainWindow = () => {
         path.join(isDev ? "build" : process.resourcesPath, "window-icon.png"),
     );
     const bounds = windowBounds();
-    const shouldUseDarkColors = nativeTheme.shouldUseDarkColors;
+    const shouldUseDarkColors =
+        userPreferences.get("isDarkMode") ?? nativeTheme.shouldUseDarkColors;
 
     const window = new BrowserWindow({
         webPreferences: {
