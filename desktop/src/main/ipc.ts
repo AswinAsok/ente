@@ -275,6 +275,15 @@ export const attachIPCHandlers = () => {
 };
 
 export const attachMainWindowIPCHandlers = (mainWindow: BrowserWindow) => {
+    on("setTitleBarOverlay", (_, isDark: boolean) => {
+        if (process.platform != "win32" || typeof isDark != "boolean") return;
+
+        mainWindow.setTitleBarOverlay({
+            color: isDark ? "black" : "white",
+            symbolColor: isDark ? "#cdcdcd" : "black",
+        });
+    });
+
     on("triggerCreateUtilityProcess", (_, type: UtilityProcessType) =>
         triggerCreateUtilityProcess(type, mainWindow),
     );

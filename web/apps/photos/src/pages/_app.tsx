@@ -16,7 +16,7 @@ import "@fontsource-variable/inter";
 import "@fontsource-variable/outfit";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import { CssBaseline, Typography } from "@mui/material";
-import { styled, ThemeProvider } from "@mui/material/styles";
+import { styled, ThemeProvider, useColorScheme } from "@mui/material/styles";
 import {
     isLocalStorageAndIndexedDBMismatch,
     savedLocalUser,
@@ -240,13 +240,24 @@ const DesktopMainContent: React.FC<MainContentProps> = ({
     );
 };
 
-const WindowTitlebar: React.FC<React.PropsWithChildren> = ({ children }) => (
-    <WindowTitlebarArea>
-        <Typography variant="small" sx={{ mt: "2px", fontWeight: "bold" }}>
-            {children}
-        </Typography>
-    </WindowTitlebarArea>
-);
+const WindowTitlebar: React.FC<React.PropsWithChildren> = ({ children }) => {
+    const { mode, systemMode } = useColorScheme();
+    const resolvedMode = mode == "system" ? systemMode : mode;
+
+    useEffect(() => {
+        if (resolvedMode) {
+            globalThis.electron?.setTitleBarOverlay(resolvedMode == "dark");
+        }
+    }, [resolvedMode]);
+
+    return (
+        <WindowTitlebarArea>
+            <Typography variant="small" sx={{ mt: "2px", fontWeight: "bold" }}>
+                {children}
+            </Typography>
+        </WindowTitlebarArea>
+    );
+};
 
 // Electron uses this as a window drag region.
 const WindowTitlebarArea = styled(CenteredRow)`
