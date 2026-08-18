@@ -42,7 +42,11 @@ export const OtpField: React.FC<OtpFieldProps> = ({
                 <Box
                     key={index}
                     component="span"
-                    sx={otpCellSx(!!error, focused && index == digits.length)}
+                    aria-hidden
+                    sx={otpCellSx(
+                        !!error,
+                        focused && index === Math.min(digits.length, 5),
+                    )}
                 >
                     {digits[index] ?? ""}
                 </Box>

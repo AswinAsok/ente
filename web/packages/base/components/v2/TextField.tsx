@@ -51,6 +51,7 @@ export const TextField: React.FC<TextFieldProps> = ({
     const [showPassword, setShowPassword] = useState(false);
     const generatedID = useId();
     const inputID = id ?? generatedID;
+    const helperTextID = `${inputID}-helper-text`;
     const inputType = showPasswordToggle
         ? showPassword
             ? "text"
@@ -84,6 +85,7 @@ export const TextField: React.FC<TextFieldProps> = ({
                 autoComplete={autoComplete}
                 name={name}
                 aria-invalid={error || undefined}
+                aria-describedby={helperText ? helperTextID : undefined}
                 endAdornment={
                     showPasswordToggle ? (
                         <ShowHidePasswordInputAdornment
@@ -100,6 +102,7 @@ export const TextField: React.FC<TextFieldProps> = ({
             />
             {helperText && (
                 <WarningMessage
+                    id={helperTextID}
                     text={helperText}
                     kind={error ? "error" : "info"}
                 />

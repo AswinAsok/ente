@@ -1,7 +1,4 @@
-export {
-    LoadingButton as Button,
-    type LoadingButtonProps as ButtonProps,
-} from "ente-base/components/mui/LoadingButton";
+export { Button, type ButtonProps } from "./Button";
 export { Checkbox, type CheckboxProps } from "./Checkbox";
 export { LinkButton, type LinkButtonProps } from "./LinkButton";
 export { OtpField, type OtpFieldProps } from "./OtpField";

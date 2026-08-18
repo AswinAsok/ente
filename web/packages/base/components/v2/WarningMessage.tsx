@@ -6,6 +6,7 @@ import { Box, type Theme } from "@mui/material";
 import React from "react";
 
 export interface WarningMessageProps {
+    id?: string;
     text: React.ReactNode;
     kind?: "error" | "warning" | "success" | "info";
     note?: boolean;
@@ -31,6 +32,7 @@ const kinds = {
 };
 
 export const WarningMessage: React.FC<WarningMessageProps> = ({
+    id,
     text,
     kind = "info",
     note,
@@ -38,6 +40,7 @@ export const WarningMessage: React.FC<WarningMessageProps> = ({
     const { color, Icon } = kinds[kind];
     return (
         <Box
+            id={id}
             component="span"
             sx={(theme) => ({
                 fontSize: 12,
