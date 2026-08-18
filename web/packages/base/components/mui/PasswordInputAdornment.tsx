@@ -21,7 +21,6 @@ export const ShowHidePasswordInputAdornment: React.FC<
     return (
         <InputAdornment position="end">
             <IconButton
-                tabIndex={-1}
                 color="secondary"
                 disabled={disabled}
                 aria-label={t("show_or_hide_password")}

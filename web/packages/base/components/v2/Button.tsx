@@ -5,6 +5,10 @@ import {
 
 export type ButtonProps = LoadingButtonProps;
 
-export function Button({ variant = "v2", ...props }: ButtonProps) {
-    return <LoadingButton variant={variant} {...props} />;
+export function Button({
+    variant = "v2",
+    color = "accent",
+    ...props
+}: ButtonProps) {
+    return <LoadingButton variant={variant} color={color} {...props} />;
 }
