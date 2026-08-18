@@ -7,11 +7,12 @@ import React from "react";
 interface ShowHidePasswordInputAdornmentProps {
     showPassword: boolean;
     onToggle: () => void;
+    disabled?: boolean;
 }
 
 export const ShowHidePasswordInputAdornment: React.FC<
     ShowHidePasswordInputAdornmentProps
-> = ({ showPassword, onToggle }) => {
+> = ({ showPassword, onToggle, disabled }) => {
     // Prevent the visibility button from blurring the password field.
     const preventDefault = (event: React.MouseEvent<HTMLButtonElement>) => {
         event.preventDefault();
@@ -22,6 +23,7 @@ export const ShowHidePasswordInputAdornment: React.FC<
             <IconButton
                 tabIndex={-1}
                 color="secondary"
+                disabled={disabled}
                 aria-label={t("show_or_hide_password")}
                 onClick={onToggle}
                 onMouseUp={preventDefault}

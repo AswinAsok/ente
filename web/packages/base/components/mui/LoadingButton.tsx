@@ -3,7 +3,9 @@ import { FocusVisibleButton } from "ente-base/components/mui/FocusVisibleButton"
 import { isSxArray } from "ente-base/components/utils/sx";
 import React from "react";
 
-export const LoadingButton: React.FC<ButtonProps & { loading?: boolean }> = ({
+export type LoadingButtonProps = ButtonProps & { loading?: boolean };
+
+export const LoadingButton: React.FC<LoadingButtonProps> = ({
     loading,
     disabled,
     color,

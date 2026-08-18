@@ -61,6 +61,10 @@ declare module "@mui/material/Button" {
         accent: true;
         critical: true;
     }
+
+    interface ButtonPropsVariantOverrides {
+        v2: true;
+    }
 }
 
 declare module "@mui/material/IconButton" {

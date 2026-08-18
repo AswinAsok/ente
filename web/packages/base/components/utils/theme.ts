@@ -527,6 +527,29 @@ const components: Components = {
                 fontSize: typography.body?.fontSize,
                 lineHeight: typography.body?.lineHeight,
                 fontWeight: 600,
+                variants: [
+                    {
+                        props: { variant: "v2" },
+                        style: {
+                            height: "52px",
+                            padding: "14px 24px",
+                            borderRadius: "20px",
+                            gap: "8px",
+                            boxSizing: "border-box",
+                            fontSize: "14px",
+                            lineHeight: "20px",
+                            fontWeight: 500,
+                            color: "var(--variant-containedColor)",
+                            backgroundColor: "var(--variant-containedBg)",
+                            transition: "background 120ms ease",
+                            "&.Mui-disabled": {
+                                color: "var(--mui-palette-action-disabled)",
+                                backgroundColor:
+                                    "var(--mui-palette-action-disabledBackground)",
+                            },
+                        },
+                    },
+                ],
             },
             startIcon: { marginRight: "12px", "&& >svg": { fontSize: "20px" } },
             endIcon: { marginLeft: "12px", "&& >svg": { fontSize: "20px" } },
