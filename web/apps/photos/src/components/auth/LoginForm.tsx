@@ -1,0 +1,103 @@
+import { Button } from "@/components/auth/Button";
+import { Form } from "@/components/auth/Form";
+import { FormFields } from "@/components/auth/FormFields";
+import { FormFooter } from "@/components/auth/FormFooter";
+import { ScreenHeader } from "@/components/auth/ScreenHeader";
+import { TextField } from "@/components/auth/TextField";
+import { TextLink } from "@/components/auth/TextLink";
+import { Input, styled } from "@mui/material";
+import type { LoginPresentationProps } from "ente-accounts/components/LoginContents";
+import { pt } from "ente-base/i18n";
+import { t } from "i18next";
+import type React from "react";
+
+export function LoginForm({
+    email,
+    emailError,
+    host,
+    isSubmitting,
+    isJoinAlbumContext,
+    isEnsu,
+    onEmailChange,
+    onSubmit,
+    onSignUp,
+    onCancel,
+}: LoginPresentationProps): React.JSX.Element {
+    return (
+        <>
+            <ScreenHeader
+                title={
+                    isJoinAlbumContext
+                        ? t("login_to_join_album")
+                        : pt("Welcome back")
+                }
+                subtitle={pt("Enter your details to continue.")}
+            />
+            <Form onSubmit={onSubmit}>
+                <FormFields>
+                    <TextField
+                        name="email"
+                        value={email}
+                        onChange={onEmailChange}
+                        type="email"
+                        autoComplete="username"
+                        label={pt("Email address")}
+                        placeholder={pt("name@example.com")}
+                        autoFocus
+                        disabled={isSubmitting}
+                        error={Boolean(emailError)}
+                        helperText={emailError}
+                    />
+                    <Input sx={{ display: "none" }} type="password" value="" />
+                </FormFields>
+                <FormFooter>
+                    <Button fullWidth type="submit" loading={isSubmitting}>
+                        {t("login")}
+                    </Button>
+                    <AccountActions>
+                        {isEnsu ? (
+                            <TextLink onClick={onCancel}>
+                                {t("cancel")}
+                            </TextLink>
+                        ) : (
+                            <AccountPrompt>
+                                <span>{pt("Don't have an account?")}</span>
+                                <TextLink regular onClick={onSignUp}>
+                                    {t("sign_up")}
+                                </TextLink>
+                            </AccountPrompt>
+                        )}
+                        <Host>{host ?? ""}</Host>
+                    </AccountActions>
+                </FormFooter>
+            </Form>
+        </>
+    );
+}
+
+const AccountActions = styled("div")({
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: "10px",
+    textAlign: "center",
+});
+
+const AccountPrompt = styled("div")({
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "6px",
+    fontSize: "14px",
+    fontWeight: 500,
+    lineHeight: "20px",
+    color: "var(--photos-auth-text-muted)",
+});
+
+const Host = styled("div")({
+    minHeight: "16px",
+    fontSize: "12px",
+    fontWeight: 500,
+    lineHeight: "16px",
+    color: "var(--photos-auth-text-faint)",
+});

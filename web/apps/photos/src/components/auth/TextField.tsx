@@ -223,7 +223,7 @@ const controlStyles = {
     background: "transparent",
     fontFamily: "inherit",
     color: "var(--photos-auth-text)",
-    "&::placeholder": { color: "var(--photos-auth-text-faint)", opacity: 1 },
+    "&::placeholder": { color: "var(--photos-auth-text-faint)", opacity: 0.65 },
     "&:disabled": {
         color: "var(--photos-auth-text-disabled)",
         WebkitTextFillColor: "var(--photos-auth-text-disabled)",

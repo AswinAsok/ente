@@ -22,11 +22,28 @@ import { AccountsPageTitleWithCaption } from "./LoginComponents";
 interface LoginContentsProps {
     host: string | undefined;
     onSignUp: () => void;
+    presentation?: React.ComponentType<LoginPresentationProps>;
+}
+
+export interface LoginPresentationProps {
+    email: string;
+    emailError: string | undefined;
+    host: string | undefined;
+    isSubmitting: boolean;
+    isJoinAlbumContext: boolean;
+    isEnsu: boolean;
+    onEmailChange: React.ChangeEventHandler<
+        HTMLInputElement | HTMLTextAreaElement
+    >;
+    onSubmit: React.SubmitEventHandler<HTMLFormElement>;
+    onSignUp: () => void;
+    onCancel: () => void;
 }
 
 export const LoginContents: React.FC<LoginContentsProps> = ({
     onSignUp,
     host,
+    presentation: Presentation,
 }) => {
     const router = useRouter();
     const [isJoinAlbumContext, setIsJoinAlbumContext] = useState(false);
@@ -104,6 +121,27 @@ export const LoginContents: React.FC<LoginContentsProps> = ({
             }
         },
     });
+
+    function onCancel() {
+        void router.push("/chat");
+    }
+
+    if (Presentation) {
+        return (
+            <Presentation
+                email={formik.values.email}
+                emailError={formik.errors.email}
+                host={host}
+                isSubmitting={formik.isSubmitting}
+                isJoinAlbumContext={isJoinAlbumContext}
+                isEnsu={isEnsu}
+                onEmailChange={formik.handleChange}
+                onSubmit={formik.handleSubmit}
+                onSignUp={onSignUp}
+                onCancel={onCancel}
+            />
+        );
+    }
 
     return (
         <>

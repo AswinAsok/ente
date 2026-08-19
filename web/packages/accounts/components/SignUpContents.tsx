@@ -29,7 +29,11 @@ import {
     sendOTT,
     type GenerateKeysAndAttributesResult,
 } from "ente-accounts/services/user";
-import { isWeakPassword } from "ente-accounts/utils/password";
+import {
+    estimatePasswordStrength,
+    isWeakPassword,
+    type PasswordStrength,
+} from "ente-accounts/utils/password";
 import { LinkButton } from "ente-base/components/LinkButton";
 import { LoadingButton } from "ente-base/components/mui/LoadingButton";
 import { ShowHidePasswordInputAdornment } from "ente-base/components/mui/PasswordInputAdornment";
@@ -52,12 +56,46 @@ interface SignUpContentsProps {
     router: NextRouter;
     onLogin: () => void;
     host: string | undefined;
+    presentation?: React.ComponentType<SignUpPresentationProps>;
+}
+
+export interface SignUpPresentationProps {
+    email: string;
+    password: string;
+    confirmPassword: string;
+    referral: string;
+    acceptedTerms: boolean;
+    emailError: string | undefined;
+    passwordError: string | undefined;
+    confirmPasswordError: string | undefined;
+    referralError: string | undefined;
+    passwordStrength: PasswordStrength | undefined;
+    isSubmitting: boolean;
+    isSubmitDisabled: boolean;
+    isJoinAlbumContext: boolean;
+    host: string | undefined;
+    onEmailChange: React.ChangeEventHandler<
+        HTMLInputElement | HTMLTextAreaElement
+    >;
+    onPasswordChange: React.ChangeEventHandler<
+        HTMLInputElement | HTMLTextAreaElement
+    >;
+    onConfirmPasswordChange: React.ChangeEventHandler<
+        HTMLInputElement | HTMLTextAreaElement
+    >;
+    onReferralChange: React.ChangeEventHandler<
+        HTMLInputElement | HTMLTextAreaElement
+    >;
+    onAcceptedTermsChange: (acceptedTerms: boolean) => void;
+    onSubmit: React.SubmitEventHandler<HTMLFormElement>;
+    onLogin: () => void;
 }
 
 export const SignUpContents: React.FC<SignUpContentsProps> = ({
     router,
     onLogin,
     host,
+    presentation: Presentation,
 }) => {
     const [showPassword, setShowPassword] = useState(false);
     const [isJoinAlbumContext, setIsJoinAlbumContext] = useState(false);
@@ -166,6 +204,46 @@ export const SignUpContents: React.FC<SignUpContentsProps> = ({
             }
         },
     });
+
+    const passwordStrength =
+        Presentation && formik.values.password
+            ? estimatePasswordStrength(formik.values.password)
+            : undefined;
+    const isSubmitDisabled = Presentation
+        ? !formik.values.acceptedTerms || isWeakPassword(formik.values.password)
+        : false;
+
+    function onAcceptedTermsChange(acceptedTerms: boolean) {
+        void formik.setFieldValue("acceptedTerms", acceptedTerms);
+    }
+
+    if (Presentation) {
+        return (
+            <Presentation
+                email={formik.values.email}
+                password={formik.values.password}
+                confirmPassword={formik.values.confirmPassword}
+                referral={formik.values.referral}
+                acceptedTerms={formik.values.acceptedTerms}
+                emailError={formik.errors.email}
+                passwordError={formik.errors.password}
+                confirmPasswordError={formik.errors.confirmPassword}
+                referralError={formik.errors.referral}
+                passwordStrength={passwordStrength}
+                isSubmitting={formik.isSubmitting}
+                isSubmitDisabled={isSubmitDisabled}
+                isJoinAlbumContext={isJoinAlbumContext}
+                host={host}
+                onEmailChange={formik.handleChange}
+                onPasswordChange={formik.handleChange}
+                onConfirmPasswordChange={formik.handleChange}
+                onReferralChange={formik.handleChange}
+                onAcceptedTermsChange={onAcceptedTermsChange}
+                onSubmit={formik.handleSubmit}
+                onLogin={onLogin}
+            />
+        );
+    }
 
     const form = (
         <form onSubmit={formik.handleSubmit}>

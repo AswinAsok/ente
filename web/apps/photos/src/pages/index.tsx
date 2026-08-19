@@ -1,11 +1,11 @@
-import { Box, Stack, Typography, styled } from "@mui/material";
+import { LoginForm } from "@/components/auth/LoginForm";
+import { SignUpForm } from "@/components/auth/SignUpForm";
+import { PhotosAuthShell } from "@/components/PhotosAuthShell";
 import { LoginContents } from "ente-accounts/components/LoginContents";
 import { SignUpContents } from "ente-accounts/components/SignUpContents";
 import { savedPartialLocalUser } from "ente-accounts/services/accounts-db";
-import { CenteredFill, CenteredRow } from "ente-base/components/containers";
-import { EnteLogo } from "ente-base/components/EnteLogo";
+import { CenteredFill } from "ente-base/components/containers";
 import { ActivityIndicator } from "ente-base/components/mui/ActivityIndicator";
-import { FocusVisibleButton } from "ente-base/components/mui/FocusVisibleButton";
 import { useBaseContext } from "ente-base/context";
 import {
     JOIN_ALBUM_CONTEXT_KEY,
@@ -22,8 +22,7 @@ import { canAccessIndexedDB } from "ente-gallery/services/files-db";
 import { DevSettings } from "ente-new/photos/components/DevSettings";
 import { t } from "i18next";
 import { useRouter } from "next/router";
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Trans } from "react-i18next";
+import React, { useCallback, useEffect, useState } from "react";
 
 const Page: React.FC = () => {
     const { showMiniDialog } = useBaseContext();
@@ -109,56 +108,35 @@ const Page: React.FC = () => {
         })();
     }, [showMiniDialog, router, refreshHost]);
 
+    function handleShowSignUp() {
+        setShowLogin(false);
+    }
+
+    function handleShowLogin() {
+        setShowLogin(true);
+    }
+
     return (
         <TappableContainer onMaybeChangeHost={refreshHost}>
             {loading ? (
                 <ActivityIndicator />
             ) : (
-                <>
-                    <SlideshowPanel>
-                        <Logo_>
-                            <EnteLogo height={24} />
-                        </Logo_>
-                        <Slideshow />
-                    </SlideshowPanel>
-                    <MobileBox>
-                        <FocusVisibleButton
-                            color="accent"
-                            onClick={() => router.push("/signup")}
-                        >
-                            {t("new_to_ente")}
-                        </FocusVisibleButton>
-                        <FocusVisibleButton
-                            onClick={() => router.push("/login")}
-                        >
-                            {t("existing_user")}
-                        </FocusVisibleButton>
-                        <MobileBoxFooter {...{ host }} />
-                    </MobileBox>
-                    <DesktopBox
-                        sx={[
-                            { bgcolor: "background.default" },
-                            (theme) =>
-                                theme.applyStyles("dark", {
-                                    bgcolor: "background.paper2",
-                                }),
-                        ]}
-                    >
-                        <Stack sx={{ width: "320px", py: 4, gap: 4 }}>
-                            {showLogin ? (
-                                <LoginContents
-                                    {...{ host }}
-                                    onSignUp={() => setShowLogin(false)}
-                                />
-                            ) : (
-                                <SignUpContents
-                                    {...{ router, host }}
-                                    onLogin={() => setShowLogin(true)}
-                                />
-                            )}
-                        </Stack>
-                    </DesktopBox>
-                </>
+                <PhotosAuthShell>
+                    {showLogin ? (
+                        <LoginContents
+                            host={host}
+                            onSignUp={handleShowSignUp}
+                            presentation={LoginForm}
+                        />
+                    ) : (
+                        <SignUpContents
+                            router={router}
+                            host={host}
+                            onLogin={handleShowLogin}
+                            presentation={SignUpForm}
+                        />
+                    )}
+                </PhotosAuthShell>
             )}
         </TappableContainer>
     );
@@ -224,163 +202,3 @@ const shouldAllowChangingAPIOrigin = () => {
         hostname.endsWith(".ente.sh")
     );
 };
-
-const SlideshowPanel = styled("div")`
-    align-self: stretch;
-
-    flex-shrink: 1;
-    flex-grow: 1;
-    flex-basis: auto;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-
-    @media (width <= 1024px) {
-        flex-grow: 0;
-    }
-    @media (width > 1024px) {
-        width: 700px;
-    }
-`;
-
-const Logo_ = styled("div")`
-    padding-inline-end: 1rem;
-
-    margin-block-start: 32px;
-    margin-block-end: 40px;
-    @media (width >= 1024px) {
-        margin-block-end: 48px;
-    }
-`;
-
-const MobileBox = styled("div")`
-    display: none;
-
-    @media (width <= 1024px) {
-        max-width: 375px;
-        width: 100%;
-        padding: 12px;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-    }
-`;
-
-interface MobileBoxFooterProps {
-    host: string | undefined;
-}
-
-const MobileBoxFooter: React.FC<MobileBoxFooterProps> = ({ host }) => {
-    return (
-        <Box sx={{ pt: 4, textAlign: "center" }}>
-            {host && (
-                <Typography variant="mini" sx={{ color: "text.faint" }}>
-                    {host}
-                </Typography>
-            )}
-        </Box>
-    );
-};
-
-const DesktopBox = styled(CenteredRow)`
-    flex-shrink: 0;
-    flex-grow: 2;
-    flex-basis: auto;
-
-    height: 100%;
-    padding-inline: 20px;
-
-    @media (width <= 1024px) {
-        display: none;
-    }
-`;
-
-const Slideshow: React.FC = () => {
-    const [selectedIndex, setSelectedIndex] = useState(0);
-    const containerRef = useRef<HTMLDivElement | null>(null);
-
-    useEffect(() => {
-        const intervalID = setInterval(() => {
-            setSelectedIndex((selectedIndex + 1) % 3);
-        }, 5000);
-        return () => clearInterval(intervalID);
-    });
-
-    useEffect(() => {
-        const container = containerRef.current!;
-        const left = containerRef.current!.offsetWidth * selectedIndex;
-        // Chrome intermittently ignores the smooth scroll.
-        // Repeat it without animation as a fallback.
-        container.scrollTo({ left, behavior: "smooth" });
-        setTimeout(() => container.scrollTo({ left }), 500);
-    }, [selectedIndex]);
-
-    return (
-        <SlidesContainer ref={containerRef}>
-            <Slide>
-                <Img
-                    src="/images/onboarding-lock/1x.png"
-                    srcSet="/images/onboarding-lock/2x.png 2x, /images/onboarding-lock/3x.png 3x"
-                />
-                <SlideTitle>
-                    <Trans i18nKey={"intro_slide_1_title"} />
-                </SlideTitle>
-                <SlideDescription>{t("intro_slide_1")}</SlideDescription>
-            </Slide>
-            <Slide>
-                <Img
-                    src="/images/onboarding-safe/1x.png"
-                    srcSet="/images/onboarding-safe/2x.png 2x, /images/onboarding-safe/3x.png 3x"
-                />
-                <SlideTitle>
-                    <Trans i18nKey={"intro_slide_2_title"} />
-                </SlideTitle>
-                <SlideDescription>{t("intro_slide_2")}</SlideDescription>
-            </Slide>
-            <Slide>
-                <Img
-                    src="/images/onboarding-sync/1x.png"
-                    srcSet="/images/onboarding-sync/2x.png 2x, /images/onboarding-sync/3x.png 3x"
-                />
-                <SlideTitle>
-                    <Trans i18nKey={"intro_slide_3_title"} />
-                </SlideTitle>
-                <SlideDescription>{t("intro_slide_3")}</SlideDescription>
-            </Slide>
-        </SlidesContainer>
-    );
-};
-
-const SlidesContainer = styled("div")`
-    align-self: stretch;
-    display: flex;
-    overflow-x: hidden;
-`;
-
-const Slide = styled(Stack)`
-    min-width: 100%;
-    align-items: center;
-    text-align: center;
-`;
-
-const SlideTitle: React.FC<React.PropsWithChildren> = ({ children }) => (
-    <Typography variant="h3" sx={{ mt: 4 }}>
-        {children}
-    </Typography>
-);
-
-const SlideDescription: React.FC<React.PropsWithChildren> = ({ children }) => (
-    <Typography sx={{ color: "text.muted", mt: 2, mb: 3 }}>
-        {children}
-    </Typography>
-);
-
-const Img = styled("img")`
-    height: 250px;
-    object-fit: contain;
-
-    @media (width <= 400px) {
-        height: 180px;
-    }
-`;
