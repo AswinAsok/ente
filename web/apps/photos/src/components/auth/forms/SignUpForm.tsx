@@ -1,12 +1,15 @@
-import { Button } from "@/components/auth/Button";
-import { Checkbox } from "@/components/auth/Checkbox";
-import { Form } from "@/components/auth/Form";
-import { FormFields } from "@/components/auth/FormFields";
-import { FormFooter } from "@/components/auth/FormFooter";
-import { Message, type MessageKind } from "@/components/auth/Message";
-import { ScreenHeader } from "@/components/auth/ScreenHeader";
-import { TextField } from "@/components/auth/TextField";
-import { TextLink } from "@/components/auth/TextLink";
+import { Button } from "@/components/auth/primitives/Button";
+import { Checkbox } from "@/components/auth/primitives/Checkbox";
+import { Form } from "@/components/auth/primitives/Form";
+import { FormFields } from "@/components/auth/primitives/FormFields";
+import { FormFooter } from "@/components/auth/primitives/FormFooter";
+import {
+    Message,
+    type MessageKind,
+} from "@/components/auth/primitives/Message";
+import { ScreenHeader } from "@/components/auth/primitives/ScreenHeader";
+import { TextField } from "@/components/auth/primitives/TextField";
+import { TextLink } from "@/components/auth/primitives/TextLink";
 import { styled } from "@mui/material";
 import type { SignUpPresentationProps } from "ente-accounts/components/SignUpContents";
 import { pt } from "ente-base/i18n";

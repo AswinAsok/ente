@@ -5,22 +5,42 @@ import { ShowHidePasswordInputAdornment } from "ente-base/components/mui/Passwor
 import log from "ente-base/log";
 import { useFormik } from "formik";
 import { t } from "i18next";
-import { useCallback, useState } from "react";
+import { useCallback, useState, type ComponentType } from "react";
 import { Trans } from "react-i18next";
 import { PasswordStrengthHint } from "./PasswordStrength";
 
 export interface NewPasswordFormProps {
     userEmail: string;
     submitButtonTitle: string;
+    presentation?: ComponentType<NewPasswordPresentationProps>;
     onSubmit: (
         password: string,
         setPasswordsFieldError: (message: string) => void,
     ) => Promise<void>;
 }
 
+export interface NewPasswordPresentationProps {
+    userEmail: string;
+    password: string;
+    confirmPassword: string;
+    passwordError: string | undefined;
+    confirmPasswordError: string | undefined;
+    isSubmitting: boolean;
+    isSubmitDisabled: boolean;
+    submitButtonTitle: string;
+    onPasswordChange: React.ChangeEventHandler<
+        HTMLInputElement | HTMLTextAreaElement
+    >;
+    onConfirmPasswordChange: React.ChangeEventHandler<
+        HTMLInputElement | HTMLTextAreaElement
+    >;
+    onSubmit: React.SubmitEventHandler<HTMLFormElement>;
+}
+
 export const NewPasswordForm: React.FC<NewPasswordFormProps> = ({
     userEmail,
     submitButtonTitle,
+    presentation: Presentation,
     onSubmit,
 }) => {
     const [showPassword, setShowPassword] = useState(false);
@@ -59,6 +79,24 @@ export const NewPasswordForm: React.FC<NewPasswordFormProps> = ({
             }
         },
     });
+
+    if (Presentation) {
+        return (
+            <Presentation
+                userEmail={userEmail}
+                password={formik.values.password}
+                confirmPassword={formik.values.confirmPassword}
+                passwordError={formik.errors.password}
+                confirmPasswordError={formik.errors.confirmPassword}
+                isSubmitting={formik.isSubmitting}
+                isSubmitDisabled={isWeakPassword(formik.values.password)}
+                submitButtonTitle={submitButtonTitle}
+                onPasswordChange={formik.handleChange}
+                onConfirmPasswordChange={formik.handleChange}
+                onSubmit={formik.handleSubmit}
+            />
+        );
+    }
 
     return (
         <form onSubmit={formik.handleSubmit}>

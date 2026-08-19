@@ -1,4 +1,4 @@
-import { SignUpForm } from "@/components/auth/SignUpForm";
+import { SignUpForm } from "@/components/auth/forms/SignUpForm";
 import { PhotosAuthShell } from "@/components/PhotosAuthShell";
 import AccountsSignUpPage from "ente-accounts/pages/signup";
 import type React from "react";

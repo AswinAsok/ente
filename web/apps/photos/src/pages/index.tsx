@@ -1,5 +1,5 @@
-import { LoginForm } from "@/components/auth/LoginForm";
-import { SignUpForm } from "@/components/auth/SignUpForm";
+import { LoginForm } from "@/components/auth/forms/LoginForm";
+import { SignUpForm } from "@/components/auth/forms/SignUpForm";
 import { PhotosAuthShell } from "@/components/PhotosAuthShell";
 import { LoginContents } from "ente-accounts/components/LoginContents";
 import { SignUpContents } from "ente-accounts/components/SignUpContents";

@@ -28,9 +28,29 @@ import { useBaseContext } from "ente-base/context";
 import log from "ente-base/log";
 import { t } from "i18next";
 import { useRouter } from "next/router";
-import { useCallback, useEffect, useState } from "react";
+import {
+    useCallback,
+    useEffect,
+    useState,
+    type ComponentType,
+    type PropsWithChildren,
+} from "react";
 
-const Page: React.FC = () => {
+export interface RecoverAccountPresentationProps {
+    onSubmit: SingleInputFormProps["onSubmit"];
+    onNoRecoveryKey: () => void;
+    onBack: () => void;
+}
+
+export interface RecoverPageProps {
+    layout?: ComponentType<PropsWithChildren>;
+    presentation?: ComponentType<RecoverAccountPresentationProps>;
+}
+
+const Page: React.FC<RecoverPageProps> = ({
+    layout: Layout = AccountsPageContents,
+    presentation: Presentation,
+}) => {
     const { showMiniDialog } = useBaseContext();
 
     const [keyAttributes, setKeyAttributes] = useState<
@@ -97,6 +117,18 @@ const Page: React.FC = () => {
             cancel: false,
         });
     }, [showMiniDialog]);
+
+    if (Presentation) {
+        return (
+            <Layout>
+                <Presentation
+                    onSubmit={handleSubmit}
+                    onNoRecoveryKey={showNoRecoveryKeyMessage}
+                    onBack={router.back}
+                />
+            </Layout>
+        );
+    }
 
     return (
         <AccountsPageContents>

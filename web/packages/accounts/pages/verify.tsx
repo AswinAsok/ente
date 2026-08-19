@@ -51,10 +51,38 @@ import log from "ente-base/log";
 import { saveAuthToken } from "ente-base/token";
 import { t } from "i18next";
 import { useRouter } from "next/router";
-import { useCallback, useEffect, useState } from "react";
+import {
+    useCallback,
+    useEffect,
+    useState,
+    type ComponentType,
+    type PropsWithChildren,
+} from "react";
 import { Trans } from "react-i18next";
 
-const Page: React.FC = () => {
+export interface VerifyEmailPresentationProps {
+    email: string;
+    resend: "enable" | "sending" | "sent";
+    onSubmit: SingleInputFormProps["onSubmit"];
+    onResend: () => void;
+    onChangeEmail: () => void;
+}
+
+export interface VerifyPageProps {
+    layout?: ComponentType<PropsWithChildren>;
+    presentation?: ComponentType<VerifyEmailPresentationProps>;
+    passkeyPresentation?: ComponentType<
+        import("ente-accounts/components/LoginComponents").VerifyingPasskeyPresentationProps
+    >;
+    loading?: ComponentType;
+}
+
+const Page: React.FC<VerifyPageProps> = ({
+    layout: Layout = AccountsPageContents,
+    presentation: Presentation,
+    passkeyPresentation,
+    loading: Loading = LoadingIndicator,
+}) => {
     const { logout, showMiniDialog } = useBaseContext();
 
     const [email, setEmail] = useState("");
@@ -161,7 +189,7 @@ const Page: React.FC = () => {
     }, [email]);
 
     if (!email) {
-        return <LoadingIndicator />;
+        return <Loading />;
     }
 
     if (passkeyVerificationData) {
@@ -170,7 +198,7 @@ const Page: React.FC = () => {
         // so that the VerifyingPasskey component does not flash before the
         // redirect completes.
         if (!globalThis.electron) {
-            return <LoadingIndicator />;
+            return <Loading />;
         }
 
         return (
@@ -180,8 +208,25 @@ const Page: React.FC = () => {
                 onRetry={() =>
                     openPasskeyVerificationURL(passkeyVerificationData)
                 }
+                layout={Layout}
+                presentation={passkeyPresentation}
                 {...{ logout, showMiniDialog }}
             />
+        );
+    }
+
+    if (Presentation) {
+        return (
+            <Layout>
+                <Presentation
+                    email={email}
+                    resend={resend}
+                    onSubmit={onSubmit}
+                    onResend={resendEmail}
+                    onChangeEmail={logout}
+                />
+                <SecondFactorChoice {...secondFactorChoiceProps} />
+            </Layout>
         );
     }
 

@@ -13,12 +13,18 @@ import { LoadingIndicator } from "ente-base/components/loaders";
 import log from "ente-base/log";
 import { nullToUndefined } from "ente-utils/transform";
 import { useRouter } from "next/router";
-import React, { useEffect } from "react";
+import React, { useEffect, type ComponentType } from "react";
 
 // The passkey finish step must run in the app that invoked the passkey flow:
 // it saves the obtained credentials to local storage, which is tied to the
 // origin.
-const Page: React.FC = () => {
+export interface PasskeyFinishPageProps {
+    loading?: ComponentType;
+}
+
+const Page: React.FC<PasskeyFinishPageProps> = ({
+    loading: Loading = LoadingIndicator,
+}) => {
     const router = useRouter();
 
     useEffect(() => {
@@ -32,7 +38,7 @@ const Page: React.FC = () => {
         );
     }, [router]);
 
-    return <LoadingIndicator />;
+    return <Loading />;
 };
 
 export default Page;

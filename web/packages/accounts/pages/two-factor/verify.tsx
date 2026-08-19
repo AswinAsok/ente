@@ -13,7 +13,13 @@ import { useBaseContext } from "ente-base/context";
 import { isHTTPErrorWithStatus } from "ente-base/http";
 import { t } from "i18next";
 import { useRouter } from "next/router";
-import { useCallback, useEffect, useState } from "react";
+import {
+    useCallback,
+    useEffect,
+    useState,
+    type ComponentType,
+    type PropsWithChildren,
+} from "react";
 import {
     AccountsPageContents,
     AccountsPageFooter,
@@ -21,7 +27,21 @@ import {
 } from "../../components/layouts/centered-paper";
 import { unstashRedirect } from "../../services/redirect";
 
-const Page: React.FC = () => {
+export interface TwoFactorVerifyPresentationProps {
+    onSubmit: (otp: string) => Promise<void>;
+    onRecover: () => void;
+    onChangeEmail: () => void;
+}
+
+export interface TwoFactorVerifyPageProps {
+    layout?: ComponentType<PropsWithChildren>;
+    presentation?: ComponentType<TwoFactorVerifyPresentationProps>;
+}
+
+const Page: React.FC<TwoFactorVerifyPageProps> = ({
+    layout: Layout = AccountsPageContents,
+    presentation: Presentation,
+}) => {
     const { logout } = useBaseContext();
 
     const [twoFactorSessionID, setTwoFactorSessionID] = useState("");
@@ -61,6 +81,18 @@ const Page: React.FC = () => {
         },
         [logout, router, twoFactorSessionID],
     );
+
+    if (Presentation) {
+        return (
+            <Layout>
+                <Presentation
+                    onSubmit={handleSubmit}
+                    onRecover={() => void router.push("/two-factor/recover")}
+                    onChangeEmail={logout}
+                />
+            </Layout>
+        );
+    }
 
     return (
         <AccountsPageContents>

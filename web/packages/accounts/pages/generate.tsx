@@ -4,7 +4,11 @@ import {
     AccountsPageFooter,
     AccountsPageTitle,
 } from "ente-accounts/components/layouts/centered-paper";
-import { RecoveryKey } from "ente-accounts/components/RecoveryKey";
+import {
+    RecoveryKey,
+    RecoveryKeyContents,
+    type RecoveryKeyPresentationProps,
+} from "ente-accounts/components/RecoveryKey";
 import {
     savedJustSignedUp,
     savedOriginalKeyAttributes,
@@ -33,13 +37,32 @@ import { useBaseContext } from "ente-base/context";
 import log from "ente-base/log";
 import { t } from "i18next";
 import { useRouter } from "next/router";
-import { useCallback, useEffect, useState } from "react";
+import {
+    useCallback,
+    useEffect,
+    useState,
+    type ComponentType,
+    type PropsWithChildren,
+} from "react";
 import {
     NewPasswordForm,
     type NewPasswordFormProps,
+    type NewPasswordPresentationProps,
 } from "../components/NewPasswordForm";
 
-const Page: React.FC = () => {
+export interface GeneratePageProps {
+    layout?: ComponentType<PropsWithChildren>;
+    passwordPresentation?: ComponentType<NewPasswordPresentationProps>;
+    recoveryKeyPresentation?: ComponentType<RecoveryKeyPresentationProps>;
+    loading?: ComponentType;
+}
+
+const Page: React.FC<GeneratePageProps> = ({
+    layout: Layout = AccountsPageContents,
+    passwordPresentation,
+    recoveryKeyPresentation,
+    loading: Loading = LoadingIndicator,
+}) => {
     const { logout, showMiniDialog } = useBaseContext();
 
     const [userEmail, setUserEmail] = useState("");
@@ -93,16 +116,36 @@ const Page: React.FC = () => {
         [userEmail],
     );
 
-    return (
-        <>
-            {openRecoveryKey ? (
-                <RecoveryKey
-                    open={openRecoveryKey}
+    if (openRecoveryKey && recoveryKeyPresentation) {
+        return (
+            <Layout>
+                <RecoveryKeyContents
+                    open
                     onClose={() => void router.push(appHomeRoute)}
                     showMiniDialog={showMiniDialog}
+                    presentation={recoveryKeyPresentation}
                 />
-            ) : userEmail ? (
-                <AccountsPageContents>
+            </Layout>
+        );
+    }
+
+    return openRecoveryKey ? (
+        <RecoveryKey
+            open
+            onClose={() => void router.push(appHomeRoute)}
+            showMiniDialog={showMiniDialog}
+        />
+    ) : userEmail ? (
+        <Layout>
+            {passwordPresentation ? (
+                <NewPasswordForm
+                    userEmail={userEmail}
+                    submitButtonTitle={t("set_password")}
+                    onSubmit={handleSubmit}
+                    presentation={passwordPresentation}
+                />
+            ) : (
+                <>
                     <AccountsPageTitle>{t("set_password")}</AccountsPageTitle>
                     <NewPasswordForm
                         userEmail={userEmail}
@@ -113,11 +156,11 @@ const Page: React.FC = () => {
                     <AccountsPageFooter>
                         <LinkButton onClick={logout}>{t("go_back")}</LinkButton>
                     </AccountsPageFooter>
-                </AccountsPageContents>
-            ) : (
-                <LoadingIndicator />
+                </>
             )}
-        </>
+        </Layout>
+    ) : (
+        <Loading />
     );
 };
 

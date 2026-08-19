@@ -8,7 +8,7 @@ import {
     authAboveMobileMediaQuery,
     authColorVariables,
     authDisplayFontFamily,
-} from "./auth/styles";
+} from "./auth/primitives/styles";
 
 interface PhotosAuthShellProps extends React.PropsWithChildren {
     contentWidth?: 400 | 420;
@@ -89,8 +89,9 @@ const BrandPanel: React.FC<BrandPanelProps> = ({ headline, size }) => (
 
 const PageRoot = styled("main")(({ theme }) => ({
     width: "100%",
-    height: "100svh",
-    minHeight: "100svh",
+    height: "100%",
+    minHeight: 0,
+    flex: "1 1 0",
     display: "flex",
     position: "relative",
     overflow: "hidden",
@@ -216,12 +217,14 @@ const ContentColumn = styled("div", {
 })<{ contentWidth: 400 | 420 }>(({ contentWidth }) => ({
     width: "100%",
     minHeight: "min-content",
+    flex: 1,
     display: "flex",
     flexDirection: "column",
     gap: "24px",
     [authAboveMobileMediaQuery]: {
         width: "440px",
         maxWidth: "100%",
+        flex: "0 0 auto",
         marginBlock: "auto",
         alignSelf: "center",
     },

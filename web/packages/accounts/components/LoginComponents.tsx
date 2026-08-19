@@ -77,12 +77,23 @@ export const AccountsPageFooterWithHost: React.FC<React.PropsWithChildren> = ({
     );
 };
 
+export interface VerifyingPasskeyPresentationProps {
+    email: string | undefined;
+    verificationStatus: "waiting" | "checking" | "pending";
+    onRetry: () => void;
+    onCheckStatus: () => void;
+    onRecover: () => void;
+    onChangeEmail: () => void;
+}
+
 interface VerifyingPasskeyProps {
     passkeySessionID: string;
     email: string | undefined;
     onRetry: () => void;
     logout: () => void;
     showMiniDialog: (attrs: MiniDialogAttributes) => void;
+    layout?: React.ComponentType<React.PropsWithChildren>;
+    presentation?: React.ComponentType<VerifyingPasskeyPresentationProps>;
 }
 
 export const VerifyingPasskey: React.FC<VerifyingPasskeyProps> = ({
@@ -91,6 +102,8 @@ export const VerifyingPasskey: React.FC<VerifyingPasskeyProps> = ({
     onRetry,
     logout,
     showMiniDialog,
+    layout: Layout = AccountsPageContents,
+    presentation: Presentation,
 }) => {
     type VerificationStatus = "waiting" | "checking" | "pending";
     const [verificationStatus, setVerificationStatus] =
@@ -125,6 +138,21 @@ export const VerifyingPasskey: React.FC<VerifyingPasskeyProps> = ({
     const handleRecover = () => {
         void router.push("/passkeys/recover");
     };
+
+    if (Presentation) {
+        return (
+            <Layout>
+                <Presentation
+                    email={email}
+                    verificationStatus={verificationStatus}
+                    onRetry={handleRetry}
+                    onCheckStatus={() => void handleCheckStatus()}
+                    onRecover={handleRecover}
+                    onChangeEmail={logout}
+                />
+            </Layout>
+        );
+    }
 
     return (
         <AccountsPageContents>
