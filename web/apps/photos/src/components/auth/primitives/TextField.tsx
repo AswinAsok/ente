@@ -192,7 +192,7 @@ const FieldBox = styled(
     gap: "8px",
     boxSizing: "border-box",
     backgroundColor: $disabled
-        ? "var(--photos-auth-fill)"
+        ? "var(--photos-auth-fill-hover)"
         : "var(--photos-auth-field)",
     boxShadow: $disabled
         ? "none"

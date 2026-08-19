@@ -43,7 +43,11 @@ export function VerifyEmailForm({
     });
 
     function handleCodeChange(code: string) {
-        void formik.setFieldValue("code", code);
+        void formik.setFieldValue("code", code).then(() => {
+            if (code.length === 6 && !formik.isSubmitting) {
+                void formik.submitForm();
+            }
+        });
     }
 
     const resendLabel =

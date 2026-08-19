@@ -13,7 +13,6 @@ import log from "ente-base/log";
 import { useFormik } from "formik";
 import { t } from "i18next";
 import type React from "react";
-import { useEffect } from "react";
 
 export function TwoFactorForm({
     onSubmit,
@@ -48,14 +47,10 @@ export function TwoFactorForm({
         },
     });
 
-    useEffect(() => {
-        if (values.otp.length === 6 && !isSubmitting) {
-            void submitForm();
-        }
-    }, [values.otp, isSubmitting, submitForm]);
-
     function handleCodeChange(otp: string) {
-        void setFieldValue("otp", otp);
+        void setFieldValue("otp", otp).then(() => {
+            if (otp.length === 6 && !isSubmitting) void submitForm();
+        });
     }
 
     return (
