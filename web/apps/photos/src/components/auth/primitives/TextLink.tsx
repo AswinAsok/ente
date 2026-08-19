@@ -43,6 +43,7 @@ const TextLinkRoot = styled(
     color: "var(--photos-auth-primary)",
     textDecoration: "none",
     cursor: "pointer",
+    "&:hover:not(:disabled)": { textDecoration: "underline" },
     "&:focus-visible": { ...authFocusRing, borderRadius: "4px" },
     "&:disabled": {
         color: "var(--photos-auth-text-disabled)",

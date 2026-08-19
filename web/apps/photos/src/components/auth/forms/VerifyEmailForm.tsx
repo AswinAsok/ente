@@ -65,7 +65,6 @@ export function VerifyEmailForm({
                     <>
                         {pt("We sent a verification code to ")}
                         <Email>{email}</Email>
-                        {pt(". Check spam too, just in case.")}
                     </>
                 }
             />

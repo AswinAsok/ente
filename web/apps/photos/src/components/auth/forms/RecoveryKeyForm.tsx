@@ -97,10 +97,9 @@ const CopyButton = styled("button")({
     position: "absolute",
     top: "12px",
     right: "12px",
-    backgroundColor: "var(--photos-auth-fill)",
+    backgroundColor: "transparent",
     color: "var(--photos-auth-text-muted)",
     cursor: "pointer",
-    "&:hover": { backgroundColor: "var(--photos-auth-fill-hover)" },
     "&:focus-visible": authFocusRing,
 });
 
