@@ -264,6 +264,18 @@ describe("video streaming percentage", () => {
         await expectProcessedFraction(0);
     });
 
+    test("updates completed videos without rescanning the library", async () => {
+        await toggleHLSGeneration();
+        await expectProcessedFraction(1);
+        await new Promise<void>(queueMicrotask);
+        mocks.fetchFileDataResult = Promise.resolve({} as never);
+
+        processVideoNewUpload(file(1), {} as never);
+
+        await expectProcessedFraction(1);
+        expect(mocks.collectionFilesReadCount).toBe(1);
+    });
+
     test("retires unsynced uploads after they enter the saved index", async () => {
         await toggleHLSGeneration();
         processVideoNewUpload(file(1), {} as never);

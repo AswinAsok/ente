@@ -67,6 +67,8 @@ class VideoState {
     processedFraction: number | undefined;
     processedFractionRefresh: Promise<void> | undefined;
     processedFractionRefreshRequests = 0;
+    candidateFileIDs: Set<number> | undefined;
+    processedCandidateFileIDs: Set<number> | undefined;
     unsyncedUploadFiles = new Map<number, EnteFile>();
     locallySkippedFileIDs = new Set<number>();
     liveQueue: VideoProcessingQueueItem[] = [];
@@ -145,6 +147,8 @@ export const toggleHLSGeneration = async () => {
 
     _state.lastEnabledStatus = undefined;
     _state.processedFraction = undefined;
+    _state.candidateFileIDs = undefined;
+    _state.processedCandidateFileIDs = undefined;
 
     await saveGenerateHLS(enabled);
     _state.isHLSGenerationEnabled = enabled;
@@ -325,6 +329,58 @@ export const processedVideoFraction = (
         : previewFileIDs.size / candidateFileIDs.size;
 };
 
+const publishProcessedFraction = (state: VideoState) => {
+    const candidateCount = state.candidateFileIDs!.size;
+    const fraction =
+        candidateCount == 0
+            ? 1
+            : state.processedCandidateFileIDs!.size / candidateCount;
+    if (fraction != state.processedFraction) {
+        state.processedFraction = fraction;
+        publishEnabledSnapshot();
+    }
+};
+
+const addProcessedFractionCandidate = (file: EnteFile) => {
+    const state = _state;
+    if (
+        state.processedFractionRefresh ||
+        !state.candidateFileIDs ||
+        !state.processedCandidateFileIDs
+    ) {
+        refreshProcessedFractionIfNeeded();
+        return;
+    }
+    if (
+        file.ownerID != ensureLocalUser().id ||
+        file.pubMagicMetadata?.data.sv == 1 ||
+        state.candidateFileIDs.has(file.id)
+    ) {
+        return;
+    }
+    state.candidateFileIDs.add(file.id);
+    publishProcessedFraction(state);
+};
+
+const updateProcessedFractionForFile = (fileID: number, skipped: boolean) => {
+    const state = _state;
+    if (
+        state.processedFractionRefresh ||
+        !state.candidateFileIDs ||
+        !state.processedCandidateFileIDs
+    ) {
+        refreshProcessedFractionIfNeeded();
+        return;
+    }
+    if (skipped) {
+        state.candidateFileIDs.delete(fileID);
+        state.processedCandidateFileIDs.delete(fileID);
+    } else if (state.candidateFileIDs.has(fileID)) {
+        state.processedCandidateFileIDs.add(fileID);
+    }
+    publishProcessedFraction(state);
+};
+
 const refreshProcessedFractionIfNeeded = () => {
     if (!isHLSGenerationSupported || !isHLSGenerationEnabled()) return;
 
@@ -350,12 +406,16 @@ const refreshProcessedFractionIfNeeded = () => {
                     candidates,
                 );
                 if (state != _state || !state.isHLSGenerationEnabled) return;
-                if (
-                    request == state.processedFractionRefreshRequests &&
-                    fraction != state.processedFraction
-                ) {
-                    state.processedFraction = fraction;
-                    publishEnabledSnapshot();
+                if (request == state.processedFractionRefreshRequests) {
+                    state.candidateFileIDs = new Set(
+                        candidates.map((f) => f.id),
+                    );
+                    state.processedCandidateFileIDs =
+                        processedFileIDs.intersection(state.candidateFileIDs);
+                    if (fraction != state.processedFraction) {
+                        state.processedFraction = fraction;
+                        publishEnabledSnapshot();
+                    }
                 }
             } catch (e) {
                 log.error("Failed to compute video processed fraction", e);
@@ -405,7 +465,7 @@ export const processVideoNewUpload = (
     });
     _state.unsyncedUploadFiles.set(file.id, file);
 
-    refreshProcessedFractionIfNeeded();
+    addProcessedFractionCandidate(file);
     tickNow();
 };
 
@@ -451,7 +511,10 @@ const processQueue = async () => {
                     _state.locallySkippedFileIDs.add(item.file.id);
                 }
                 await markProcessedVideoFileID(item.file.id);
-                refreshProcessedFractionIfNeeded();
+                updateProcessedFractionForFile(
+                    item.file.id,
+                    result == "not-required",
+                );
                 _state.idleWait = idleWaitInitial;
             } catch (e) {
                 log.error(`Failed to process video ${fileLogID(item.file)}`, e);
