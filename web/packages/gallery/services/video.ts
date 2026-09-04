@@ -45,7 +45,12 @@ export type HLSGenerationEnabledStatus = "processing" | "idle";
 
 export type HLSGenerationStatus =
     | { enabled: false }
-    | { enabled: true; status?: HLSGenerationEnabledStatus };
+    | {
+          enabled: true;
+          status?: HLSGenerationEnabledStatus;
+          /** `undefined` until the processed fraction has been calculated. */
+          processedFraction?: number;
+      };
 
 interface VideoProcessingQueueItem {
     file: EnteFile;
@@ -60,6 +65,9 @@ class VideoState {
     hlsGenerationStatusListeners: (() => void)[] = [];
     hlsGenerationStatusSnapshot: HLSGenerationStatus | undefined;
     lastEnabledStatus: HLSGenerationEnabledStatus | undefined;
+    processedFraction: number | undefined;
+    processedFractionRefresh: Promise<void> | undefined;
+    processedFractionRefreshRequests = 0;
     liveQueue: VideoProcessingQueueItem[] = [];
     queueProcessor: Promise<void> | undefined;
     tick: Promise<void> | undefined;
@@ -93,13 +101,19 @@ const setHLSGenerationStatusSnapshot = (snapshot: HLSGenerationStatus) => {
     _state.hlsGenerationStatusListeners.forEach((l) => l());
 };
 
+const publishEnabledSnapshot = () =>
+    setHLSGenerationStatusSnapshot({
+        enabled: true,
+        status: _state.lastEnabledStatus,
+        processedFraction: _state.processedFraction,
+    });
+
 const updateSnapshotIfNeeded = (
     status: HLSGenerationEnabledStatus | undefined,
 ) => {
-    const enabled = _state.isHLSGenerationEnabled;
-    if (enabled && status != _state.lastEnabledStatus) {
+    if (_state.isHLSGenerationEnabled && status != _state.lastEnabledStatus) {
         _state.lastEnabledStatus = status;
-        setHLSGenerationStatusSnapshot({ enabled, status });
+        publishEnabledSnapshot();
     }
 };
 
@@ -112,6 +126,8 @@ export const initVideoProcessing = async () => {
     _state.isHLSGenerationEnabled = enabled;
 
     setHLSGenerationStatusSnapshot({ enabled });
+
+    if (enabled) refreshProcessedFractionIfNeeded();
 };
 
 const savedGenerateHLS = async () => await getKVB("generateHLS");
@@ -127,13 +143,22 @@ export const toggleHLSGeneration = async () => {
     const enabled = !_state.isHLSGenerationEnabled;
 
     _state.lastEnabledStatus = undefined;
+    _state.processedFraction = undefined;
 
     await saveGenerateHLS(enabled);
     _state.isHLSGenerationEnabled = enabled;
 
     setHLSGenerationStatusSnapshot({ enabled });
 
-    if (enabled) tickNow();
+    if (enabled) {
+        try {
+            await pullProcessedFileIDs();
+            refreshProcessedFractionIfNeeded();
+        } catch (e) {
+            log.error("Failed to sync video preview status", e);
+        }
+        tickNow();
+    }
 };
 
 export interface HLSPlaylistData {
@@ -288,6 +313,80 @@ export const videoPrunePermanentlyDeletedFileIDsIfNeeded = async (
     }
 };
 
+const mobileStreamMaxSize = 500 * 1024 * 1024;
+const mobileStreamMaxDuration = 60; /* seconds */
+
+const isWithinMobileStreamLimits = (file: EnteFile) => {
+    const size = file.info?.fileSize;
+    const duration = file.metadata.duration;
+    return (
+        size != undefined &&
+        size <= mobileStreamMaxSize &&
+        duration != undefined &&
+        duration > 0 &&
+        duration <= mobileStreamMaxDuration
+    );
+};
+
+export const processedVideoFraction = (
+    processedFileIDs: Set<number>,
+    candidateFiles: EnteFile[],
+) => {
+    const candidateFileIDs = new Set(candidateFiles.map((f) => f.id));
+    const previewFileIDs = processedFileIDs.intersection(candidateFileIDs);
+    const countedFileIDs = new Set(
+        candidateFiles.filter(isWithinMobileStreamLimits).map((f) => f.id),
+    );
+    const total = previewFileIDs.union(countedFileIDs);
+    return total.size == 0 ? 1 : previewFileIDs.size / total.size;
+};
+
+const refreshProcessedFractionIfNeeded = () => {
+    if (!isHLSGenerationSupported || !isHLSGenerationEnabled()) return;
+
+    const state = _state;
+    state.processedFractionRefreshRequests++;
+    if (state.processedFractionRefresh) return;
+
+    let handledRequests = 0;
+    state.processedFractionRefresh = (async () => {
+        while (handledRequests != state.processedFractionRefreshRequests) {
+            const request = state.processedFractionRefreshRequests;
+            try {
+                // ponytail: Recompute on rare events; use incremental counts
+                // only if profiling shows the library scan is material.
+                const [candidates, processedFileIDs] = await Promise.all([
+                    savedStreamCandidateFiles(ensureLocalUser().id),
+                    savedProcessedVideoFileIDs(),
+                ]);
+                const fraction = processedVideoFraction(
+                    processedFileIDs,
+                    candidates,
+                );
+                if (state != _state || !state.isHLSGenerationEnabled) return;
+                if (
+                    request == state.processedFractionRefreshRequests &&
+                    fraction != state.processedFraction
+                ) {
+                    state.processedFraction = fraction;
+                    publishEnabledSnapshot();
+                }
+            } catch (e) {
+                log.error("Failed to compute video processed fraction", e);
+            }
+            handledRequests = request;
+        }
+    })().finally(() => {
+        state.processedFractionRefresh = undefined;
+        if (
+            state == _state &&
+            handledRequests != state.processedFractionRefreshRequests
+        ) {
+            refreshProcessedFractionIfNeeded();
+        }
+    });
+};
+
 export const videoProcessingSyncIfNeeded = async () => {
     if (!isHLSGenerationSupported) return;
 
@@ -297,6 +396,7 @@ export const videoProcessingSyncIfNeeded = async () => {
     if (!isHLSGenerationEnabled()) return;
 
     await pullProcessedFileIDs();
+    refreshProcessedFractionIfNeeded();
 
     tickNow();
 };
@@ -360,6 +460,7 @@ const processQueue = async () => {
             try {
                 await processQueueItem(item);
                 await markProcessedVideoFileID(item.file.id);
+                refreshProcessedFractionIfNeeded();
                 _state.idleWait = idleWaitInitial;
             } catch (e) {
                 log.error(`Failed to process video ${fileLogID(item.file)}`, e);
@@ -384,20 +485,33 @@ const processQueue = async () => {
     _state.queueProcessor = undefined;
 };
 
-const backfillQueue = async (
+// Shared with backfill so the percentage and queue use the same population.
+export const streamCandidateFiles = (
+    files: EnteFile[],
+    trashFileIDs: Set<number>,
     userID: number,
-): Promise<VideoProcessingQueueItem[]> => {
-    const allCollectionFiles = await savedCollectionFiles();
-    const localTrashFileIDs = await savedTrashItemFileIDs();
-    const videoFiles = uniqueFilesByID(
-        allCollectionFiles.filter(
+) =>
+    uniqueFilesByID(
+        files.filter(
             (f) =>
                 f.ownerID == userID &&
                 f.metadata.fileType == FileType.video &&
-                !localTrashFileIDs.has(f.id) &&
+                !trashFileIDs.has(f.id) &&
                 f.pubMagicMetadata?.data.sv != 1,
         ),
     );
+
+const savedStreamCandidateFiles = async (userID: number) =>
+    streamCandidateFiles(
+        await savedCollectionFiles(),
+        await savedTrashItemFileIDs(),
+        userID,
+    );
+
+const backfillQueue = async (
+    userID: number,
+): Promise<VideoProcessingQueueItem[]> => {
+    const videoFiles = await savedStreamCandidateFiles(userID);
 
     const doneIDs = (await savedProcessedVideoFileIDs()).union(
         await savedFailedVideoFileIDs(),
