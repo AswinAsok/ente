@@ -505,11 +505,9 @@ const savedStreamCandidateFiles = async (
         savedTrashItemFileIDs(),
     ]);
     const savedFileIDs = new Set(savedFiles.map((file) => file.id));
-    const unsyncedFiles = Array.from(unsyncedUploadFiles.values()).filter(
-        (file) => !savedFileIDs.has(file.id),
-    );
+    savedFileIDs.forEach((fileID) => unsyncedUploadFiles.delete(fileID));
     return streamCandidateFiles(
-        [...savedFiles, ...unsyncedFiles],
+        [...savedFiles, ...unsyncedUploadFiles.values()],
         trashFileIDs,
         userID,
     ).filter((file) => !locallySkippedFileIDs.has(file.id));

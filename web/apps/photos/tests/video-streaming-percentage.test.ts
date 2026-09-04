@@ -124,6 +124,7 @@ const {
     resetVideoState,
     streamCandidateFiles,
     toggleHLSGeneration,
+    videoPrunePermanentlyDeletedFileIDsIfNeeded,
     videoProcessingSyncIfNeeded,
 } = await import("ente-gallery/services/video");
 
@@ -273,6 +274,37 @@ describe("video streaming percentage", () => {
             expect(hlsGenerationStatusSnapshot()).toMatchObject({
                 enabled: true,
                 processedFraction: 0,
+            }),
+        );
+    });
+
+    test("retires unsynced uploads after they enter the saved index", async () => {
+        await toggleHLSGeneration();
+        processVideoNewUpload(file(1), {} as never);
+        await vi.waitFor(() =>
+            expect(hlsGenerationStatusSnapshot()).toMatchObject({
+                enabled: true,
+                processedFraction: 0,
+            }),
+        );
+
+        mocks.collectionFiles = [file(1), file(2), file(3)];
+        mocks.kv.set("videoPreviewProcessedFileIDs", [1, 2]);
+        await initVideoProcessing();
+        await vi.waitFor(() =>
+            expect(hlsGenerationStatusSnapshot()).toMatchObject({
+                enabled: true,
+                processedFraction: 2 / 3,
+            }),
+        );
+
+        mocks.collectionFiles = [file(2), file(3)];
+        await videoPrunePermanentlyDeletedFileIDsIfNeeded(new Set([1]));
+        await initVideoProcessing();
+        await vi.waitFor(() =>
+            expect(hlsGenerationStatusSnapshot()).toMatchObject({
+                enabled: true,
+                processedFraction: 1 / 2,
             }),
         );
     });
