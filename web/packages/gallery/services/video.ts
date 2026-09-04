@@ -313,32 +313,15 @@ export const videoPrunePermanentlyDeletedFileIDsIfNeeded = async (
     }
 };
 
-const mobileStreamMaxSize = 500 * 1024 * 1024;
-const mobileStreamMaxDuration = 60; /* seconds */
-
-const isWithinMobileStreamLimits = (file: EnteFile) => {
-    const size = file.info?.fileSize;
-    const duration = file.metadata.duration;
-    return (
-        size != undefined &&
-        size <= mobileStreamMaxSize &&
-        duration != undefined &&
-        duration > 0 &&
-        duration <= mobileStreamMaxDuration
-    );
-};
-
 export const processedVideoFraction = (
     processedFileIDs: Set<number>,
     candidateFiles: EnteFile[],
 ) => {
     const candidateFileIDs = new Set(candidateFiles.map((f) => f.id));
     const previewFileIDs = processedFileIDs.intersection(candidateFileIDs);
-    const countedFileIDs = new Set(
-        candidateFiles.filter(isWithinMobileStreamLimits).map((f) => f.id),
-    );
-    const total = previewFileIDs.union(countedFileIDs);
-    return total.size == 0 ? 1 : previewFileIDs.size / total.size;
+    return candidateFileIDs.size == 0
+        ? 1
+        : previewFileIDs.size / candidateFileIDs.size;
 };
 
 const refreshProcessedFractionIfNeeded = () => {
