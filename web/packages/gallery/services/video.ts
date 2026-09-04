@@ -48,7 +48,6 @@ export type HLSGenerationStatus =
     | {
           enabled: true;
           status?: HLSGenerationEnabledStatus;
-          /** `undefined` until the processed fraction has been calculated. */
           processedFraction?: number;
       };
 
@@ -338,8 +337,6 @@ const refreshProcessedFractionIfNeeded = () => {
         while (handledRequests != state.processedFractionRefreshRequests) {
             const request = state.processedFractionRefreshRequests;
             try {
-                // ponytail: Recompute on rare events; use incremental counts
-                // only if profiling shows the library scan is material.
                 const [candidates, processedFileIDs] = await Promise.all([
                     savedStreamCandidateFiles(
                         ensureLocalUser().id,
@@ -479,7 +476,6 @@ const processQueue = async () => {
     _state.queueProcessor = undefined;
 };
 
-// Shared with backfill so the percentage and queue use the same population.
 export const streamCandidateFiles = (
     files: EnteFile[],
     trashFileIDs: Set<number>,
