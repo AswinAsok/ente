@@ -68,6 +68,8 @@ class VideoState {
     processedFraction: number | undefined;
     processedFractionRefresh: Promise<void> | undefined;
     processedFractionRefreshRequests = 0;
+    unsyncedUploadFiles = new Map<number, EnteFile>();
+    locallySkippedFileIDs = new Set<number>();
     liveQueue: VideoProcessingQueueItem[] = [];
     queueProcessor: Promise<void> | undefined;
     tick: Promise<void> | undefined;
@@ -153,11 +155,11 @@ export const toggleHLSGeneration = async () => {
     if (enabled) {
         try {
             await pullProcessedFileIDs();
-            refreshProcessedFractionIfNeeded();
         } catch (e) {
             log.error("Failed to sync video preview status", e);
         }
-        tickNow();
+        refreshProcessedFractionIfNeeded();
+        if (isHLSGenerationEnabled()) tickNow();
     }
 };
 
@@ -339,7 +341,11 @@ const refreshProcessedFractionIfNeeded = () => {
                 // ponytail: Recompute on rare events; use incremental counts
                 // only if profiling shows the library scan is material.
                 const [candidates, processedFileIDs] = await Promise.all([
-                    savedStreamCandidateFiles(ensureLocalUser().id),
+                    savedStreamCandidateFiles(
+                        ensureLocalUser().id,
+                        state.unsyncedUploadFiles,
+                        state.locallySkippedFileIDs,
+                    ),
                     savedProcessedVideoFileIDs(),
                 ]);
                 const fraction = processedVideoFraction(
@@ -400,7 +406,9 @@ export const processVideoNewUpload = (
         file,
         timestampedUploadItem: processableUploadItem,
     });
+    _state.unsyncedUploadFiles.set(file.id, file);
 
+    refreshProcessedFractionIfNeeded();
     tickNow();
 };
 
@@ -441,7 +449,10 @@ const processQueue = async () => {
             updateSnapshotIfNeeded("processing");
 
             try {
-                await processQueueItem(item);
+                const result = await processQueueItem(item);
+                if (result == "not-required") {
+                    _state.locallySkippedFileIDs.add(item.file.id);
+                }
                 await markProcessedVideoFileID(item.file.id);
                 refreshProcessedFractionIfNeeded();
                 _state.idleWait = idleWaitInitial;
@@ -484,12 +495,25 @@ export const streamCandidateFiles = (
         ),
     );
 
-const savedStreamCandidateFiles = async (userID: number) =>
-    streamCandidateFiles(
-        await savedCollectionFiles(),
-        await savedTrashItemFileIDs(),
-        userID,
+const savedStreamCandidateFiles = async (
+    userID: number,
+    unsyncedUploadFiles = new Map<number, EnteFile>(),
+    locallySkippedFileIDs = new Set<number>(),
+) => {
+    const [savedFiles, trashFileIDs] = await Promise.all([
+        savedCollectionFiles(),
+        savedTrashItemFileIDs(),
+    ]);
+    const savedFileIDs = new Set(savedFiles.map((file) => file.id));
+    const unsyncedFiles = Array.from(unsyncedUploadFiles.values()).filter(
+        (file) => !savedFileIDs.has(file.id),
     );
+    return streamCandidateFiles(
+        [...savedFiles, ...unsyncedFiles],
+        trashFileIDs,
+        userID,
+    ).filter((file) => !locallySkippedFileIDs.has(file.id));
+};
 
 const backfillQueue = async (
     userID: number,
@@ -566,7 +590,7 @@ const processQueueItem = async ({
         log.info(`Generate HLS for ${fileLogID(file)} | not-required`);
         // Persist stable ineligibility so every client can skip this file.
         await updateFilePublicMagicMetadata(file, { sv: 1 });
-        return;
+        return "not-required";
     }
 
     const { playlistToken, dimensions, videoSize, videoObjectID } = res;
@@ -600,6 +624,8 @@ const processQueueItem = async ({
     } finally {
         await videoStreamDone(electron, playlistToken);
     }
+
+    return undefined;
 };
 
 const encodePlaylistJSON = (playlistJSON: PlaylistJSON) =>
