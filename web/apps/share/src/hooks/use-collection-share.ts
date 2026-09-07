@@ -68,29 +68,19 @@ const writeLocalStorageItem = (key: string, value: string) => {
     }
 };
 
-const removeLocalStorageItem = (key: string) => {
+// Remove credentials persisted by older versions. JWTs now stay in memory.
+const removeLegacyAccessTokenJWTs = () => {
     try {
-        window.localStorage.removeItem(key);
+        for (let i = window.localStorage.length - 1; i >= 0; i--) {
+            const key = window.localStorage.key(i);
+            if (key?.startsWith("share-collection-access-token-jwt:")) {
+                window.localStorage.removeItem(key);
+            }
+        }
     } catch {
-        // Ignore storage failures and continue with in-memory state.
+        // Storage may be unavailable; continue with in-memory credentials.
     }
 };
-
-const accessTokenJWTStorageKey = (accessToken: string) =>
-    `share-collection-access-token-jwt:${accessToken}`;
-
-const savedAccessTokenJWT = (accessToken: string): string | null =>
-    readLocalStorageItem(accessTokenJWTStorageKey(accessToken));
-
-const saveAccessTokenJWT = (accessToken: string, accessTokenJWT: string) => {
-    writeLocalStorageItem(
-        accessTokenJWTStorageKey(accessToken),
-        accessTokenJWT,
-    );
-};
-
-const removeAccessTokenJWT = (accessToken: string) =>
-    removeLocalStorageItem(accessTokenJWTStorageKey(accessToken));
 
 const linkDeviceTokenStorageKey = (apiOrigin: string, accessToken: string) =>
     `share-collection-link-device-token:${apiOrigin}:${accessToken}`;
@@ -267,14 +257,12 @@ export const useCollectionShare = (): UseCollectionShareResult => {
                     return;
                 }
 
-                const storedAccessTokenJWT = savedAccessTokenJWT(token);
                 const currentAPIOrigin = await apiOrigin();
                 const storedLinkDeviceToken = savedLinkDeviceToken(
                     currentAPIOrigin,
                     token,
                 );
-                const resolvedAccessTokenJWT =
-                    opts?.accessTokenJWT ?? storedAccessTokenJWT ?? undefined;
+                const resolvedAccessTokenJWT = opts?.accessTokenJWT;
                 const resolvedLinkDeviceToken =
                     storedLinkDeviceToken ?? undefined;
 
@@ -298,7 +286,6 @@ export const useCollectionShare = (): UseCollectionShareResult => {
                     );
                 }
                 if (!metadata.passwordEnabled && resolvedAccessTokenJWT) {
-                    removeAccessTokenJWT(token);
                     setAccessTokenJWT(null);
                 }
 
@@ -327,7 +314,6 @@ export const useCollectionShare = (): UseCollectionShareResult => {
                     );
                 } catch (err) {
                     if (activeAccessTokenJWT && isHTTP401Error(err)) {
-                        removeAccessTokenJWT(token);
                         setAccessTokenJWT(null);
                         setPasswordProtectedPublicURL(
                             metadata.publicURL ?? null,
@@ -365,6 +351,7 @@ export const useCollectionShare = (): UseCollectionShareResult => {
     useEffect(() => {
         if (router.isReady && !initialLoadStartedRef.current) {
             initialLoadStartedRef.current = true;
+            removeLegacyAccessTokenJWTs();
             void loadCollection();
         }
     }, [router.isReady, loadCollection]);
@@ -392,7 +379,16 @@ export const useCollectionShare = (): UseCollectionShareResult => {
 
             lastResumeRevalidateAtRef.current = now;
             isRevalidatingRef.current = true;
-            void loadCollection({ silent: true }).finally(() => {
+            const token = extractCollectionTokenFromURL(
+                new URL(window.location.href),
+            );
+            void loadCollection({
+                silent: true,
+                accessTokenJWT:
+                    token === accessToken
+                        ? (accessTokenJWT ?? undefined)
+                        : undefined,
+            }).finally(() => {
                 isRevalidatingRef.current = false;
             });
         };
@@ -415,7 +411,7 @@ export const useCollectionShare = (): UseCollectionShareResult => {
                 onVisibilityChange,
             );
         };
-    }, [router.isReady, loadCollection]);
+    }, [router.isReady, loadCollection, accessToken, accessTokenJWT]);
 
     useEffect(() => {
         if (!selectedItem) {
@@ -502,7 +498,6 @@ export const useCollectionShare = (): UseCollectionShareResult => {
             );
         } catch (err) {
             if (accessTokenJWT && collectionKey && isHTTP401Error(err)) {
-                removeAccessTokenJWT(accessToken);
                 setAccessTokenJWT(null);
                 setSelectedItem(null);
                 await loadCollection({ accessToken, collectionKey });
@@ -562,7 +557,6 @@ export const useCollectionShare = (): UseCollectionShareResult => {
                 accessToken,
             );
             setAccessTokenJWT(jwtToken);
-            saveAccessTokenJWT(accessToken, jwtToken);
             await loadCollection({
                 accessToken,
                 collectionKey,
