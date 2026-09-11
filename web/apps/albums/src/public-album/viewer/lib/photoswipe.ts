@@ -1,4 +1,3 @@
-import { downloadManager } from "@/public-album/download/services/download-manager";
 import {
     enteWordmarkSVGHTML,
     enteWordmarkViewBox,
@@ -32,10 +31,6 @@ export type FileViewerPhotoSwipeOptions<
 >;
 
 const fileViewerPhotoSwipeDataSource = {
-    fileDownloadProgressSubscribe: (onChange: () => void) =>
-        downloadManager.fileDownloadProgressSubscribe(onChange),
-    fileDownloadProgressSnapshot: () =>
-        downloadManager.fileDownloadProgressSnapshot(),
     fileViewerDidClose,
     fileViewerWillOpen,
     forgetExifForItemData,
