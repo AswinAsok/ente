@@ -131,10 +131,10 @@ export const PublicAlbumSingleFileViewer: React.FC<
 
     useEffect(() => {
         let classObserver: MutationObserver | undefined;
-        let preloaderObserver: MutationObserver | undefined;
+        let progressObserver: MutationObserver | undefined;
         let errorObserver: MutationObserver | undefined;
         let pswpElement: HTMLElement | null = null;
-        let preloaderElement: HTMLElement | null = null;
+        let progressElement: HTMLElement | null = null;
         let errorElement: HTMLElement | null = null;
 
         const updateVisibility = () => {
@@ -145,8 +145,8 @@ export const PublicAlbumSingleFileViewer: React.FC<
 
         const updateLoading = () => {
             setIsPhotoSwipeContentLoading(
-                preloaderElement?.classList.contains(
-                    "pswp__preloader--active",
+                progressElement?.classList.contains(
+                    "pswp__ente-progress-text--active",
                 ) ?? false,
             );
         };
@@ -158,22 +158,23 @@ export const PublicAlbumSingleFileViewer: React.FC<
             );
         };
 
-        const bindToPreloaderElement = () => {
-            const next =
-                pswpElement?.querySelector<HTMLElement>(".pswp__preloader");
-            if (next === preloaderElement) return;
+        const bindToProgressElement = () => {
+            const next = pswpElement?.querySelector<HTMLElement>(
+                ".pswp__ente-progress-text",
+            );
+            if (next === progressElement) return;
 
-            preloaderObserver?.disconnect();
-            preloaderObserver = undefined;
-            preloaderElement = next ?? null;
+            progressObserver?.disconnect();
+            progressObserver = undefined;
+            progressElement = next ?? null;
 
-            if (!preloaderElement) {
+            if (!progressElement) {
                 setIsPhotoSwipeContentLoading(false);
                 return;
             }
 
-            preloaderObserver = new MutationObserver(updateLoading);
-            preloaderObserver.observe(preloaderElement, {
+            progressObserver = new MutationObserver(updateLoading);
+            progressObserver.observe(progressElement, {
                 attributes: true,
                 attributeFilter: ["class"],
             });
@@ -210,11 +211,11 @@ export const PublicAlbumSingleFileViewer: React.FC<
                 pswpElement = next;
 
                 if (!pswpElement) {
-                    preloaderObserver?.disconnect();
-                    preloaderObserver = undefined;
+                    progressObserver?.disconnect();
+                    progressObserver = undefined;
                     errorObserver?.disconnect();
                     errorObserver = undefined;
-                    preloaderElement = null;
+                    progressElement = null;
                     errorElement = null;
                     setIsPhotoSwipeUIVisible(true);
                     setIsPhotoSwipeContentLoading(false);
@@ -230,7 +231,7 @@ export const PublicAlbumSingleFileViewer: React.FC<
                 updateVisibility();
             }
 
-            bindToPreloaderElement();
+            bindToProgressElement();
             bindToErrorElement();
         };
 
@@ -241,7 +242,7 @@ export const PublicAlbumSingleFileViewer: React.FC<
         return () => {
             treeObserver.disconnect();
             classObserver?.disconnect();
-            preloaderObserver?.disconnect();
+            progressObserver?.disconnect();
             errorObserver?.disconnect();
         };
     }, []);
@@ -525,7 +526,9 @@ export const PublicAlbumSingleFileViewer: React.FC<
                         { display: "none !important" },
                     [`body.${bodyClassName} .pswp-ente-public-album .pswp__button--vol`]:
                         { display: "none !important" },
-                    [`body.${bodyClassName} .pswp-ente-public-album .pswp__preloader`]:
+                    [`body.${bodyClassName} .pswp-ente-public-album .pswp__ente-progress-text`]:
+                        { display: "none !important" },
+                    [`body.${bodyClassName} .pswp-ente-public-album .pswp__ente-progress-bar`]:
                         { display: "none !important" },
                     [`body.${bodyClassName} .pswp-ente-public-album .pswp__error`]:
                         { display: "none !important" },
