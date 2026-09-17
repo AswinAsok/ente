@@ -9,7 +9,7 @@ import { FileType, type FileTypeInfo } from "ente-media/file-type";
 import { isHEICExtension } from "ente-media/formats";
 import { heicToJPEG } from "ente-media/heic-convert";
 import { scaledImageDimensions } from "ente-media/image";
-import { imageConversionFormat } from "ente-media/image-formats";
+import { rawImageFormat } from "ente-media/image-formats";
 import { withTimeout } from "ente-utils/promise";
 
 const maxThumbnailDimension = 720;
@@ -24,10 +24,7 @@ export const generateThumbnailWeb = async (
     fileTypeInfo: FileTypeInfo,
     fileName = `image.${fileTypeInfo.extension}`,
     abortIfCancelled?: () => void,
-): Promise<{
-    thumbnail: Uint8Array<ArrayBuffer>;
-    imageDimensions?: { width: number; height: number };
-}> =>
+): Promise<Uint8Array<ArrayBuffer>> =>
     fileTypeInfo.fileType == FileType.image
         ? await generateImageThumbnailWeb(
               blob,
@@ -35,7 +32,7 @@ export const generateThumbnailWeb = async (
               fileName,
               abortIfCancelled,
           )
-        : { thumbnail: await generateVideoThumbnailWeb(blob) };
+        : await generateVideoThumbnailWeb(blob);
 
 const generateImageThumbnailWeb = async (
     blob: Blob,
@@ -43,28 +40,24 @@ const generateImageThumbnailWeb = async (
     fileName: string,
     abortIfCancelled?: () => void,
 ) => {
-    if (imageConversionFormat(fileName, extension)) {
-        const { convertImage } = await import("../image-convert");
-        const image = await convertImage(
+    const format = rawImageFormat(fileName, extension);
+    if (format) {
+        const { convertImage } =
+            await import("ente-gallery/services/image-convert");
+        const preview = await convertImage(
             blob,
-            fileName,
+            format,
             "thumbnail",
             abortIfCancelled,
         );
-        return {
-            thumbnail: new Uint8Array(await image.blob.arrayBuffer()),
-            imageDimensions: {
-                width: image.sourceWidth,
-                height: image.sourceHeight,
-            },
-        };
+        return new Uint8Array(await preview.arrayBuffer());
     }
     if (isHEICExtension(extension)) {
         log.debug(() => `Pre-converting HEIC to JPEG for thumbnail generation`);
         blob = await heicToJPEG(blob);
     }
 
-    return { thumbnail: await generateImageThumbnailUsingCanvas(blob) };
+    return generateImageThumbnailUsingCanvas(blob);
 };
 
 const generateImageThumbnailUsingCanvas = async (blob: Blob) => {
@@ -76,8 +69,7 @@ const generateImageThumbnailUsingCanvas = async (blob: Blob) => {
         await withTimeout(
             new Promise((resolve, reject) => {
                 const image = new Image();
-                image.onerror = () =>
-                    reject(new Error("Image decoding failed"));
+                image.setAttribute("src", imageURL);
                 image.onload = () => {
                     try {
                         const { width, height } = scaledImageDimensions(
@@ -94,7 +86,6 @@ const generateImageThumbnailUsingCanvas = async (blob: Blob) => {
                         reject(e);
                     }
                 };
-                image.src = imageURL;
             }),
             canvasThumbnailGenerationTimeout,
         );

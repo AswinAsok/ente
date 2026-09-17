@@ -1,464 +1,68 @@
 [
     {
-        "filename": "sample_640×426.bmp",
-        "extension": "bmp",
-        "source": "https://filesamples.com/samples/image/bmp/sample_640×426.bmp",
-        "sha256": "34a7d53b4077db9099a0a487e80314a3e25dc8a10f618df7ed2c360a3d74f3a6",
-        "bytes": 818058,
-        "expected": "unchanged",
-        "previewDimensions": [640, 426]
-    },
-    {
         "filename": "sample1.cr2",
-        "extension": "cr2",
         "source": "https://filesamples.com/samples/image/cr2/sample1.cr2",
         "sha256": "88693a6ef22cfcf8280e926bd863615d7ae7d06ef8a0b08ab8a9cac7b9dad59f",
-        "bytes": 55852806,
-        "expected": "converted",
-        "note": "Truncated RAW pixels; the intact embedded preview is usable",
         "previewDimensions": [8688, 5792]
     },
     {
-        "filename": "sample_1280×853.cur",
-        "extension": "cur",
-        "source": "https://filesamples.com/samples/image/cur/sample_1280×853.cur",
-        "sha256": "ab5fab8c41623edb24771d6ea817e97c3af7e76dc0e2e03dc1f1788d763af2df",
-        "bytes": 180638,
-        "expected": "unchanged",
-        "previewDimensions": [256, 171]
-    },
-    {
-        "filename": "sample_640×426.dds",
-        "extension": "dds",
-        "source": "https://filesamples.com/samples/image/dds/sample_640×426.dds",
-        "sha256": "7b077229097d3af59b50b74ed4bd61bc7ff19134855c282e3c88fbf42d555e82",
-        "bytes": 137088,
-        "expected": "converted",
-        "previewDimensions": [640, 426]
-    },
-    {
         "filename": "sample1.dng",
-        "extension": "dng",
         "source": "https://filesamples.com/samples/image/dng/sample1.dng",
         "sha256": "b3a8299bd47ba5c43b96ddbfc152b1f4df9774097760598726c7811a79d901e5",
-        "bytes": 6372698,
-        "expected": "converted",
         "previewDimensions": [1024, 683]
     },
     {
-        "filename": "sample1.erf",
-        "extension": "erf",
-        "source": "https://filesamples.com/samples/image/erf/sample1.erf",
-        "sha256": "ebf8b8ab502ea3eaa69f9cd355064665d0a6a822bff08bbcd1efeb41d75bd34f",
-        "bytes": 7696,
-        "expected": "unsupported",
-        "note": "Network capture, not an Epson RAW image"
-    },
-    {
-        "filename": "sample_640×426.exr",
-        "extension": "exr",
-        "source": "https://filesamples.com/samples/image/exr/sample_640×426.exr",
-        "sha256": "617ff98fb0a1f3b9da819fb9ac8d4af1f75bb4cf9b46dfb881af011bbe176752",
-        "bytes": 1642969,
-        "expected": "converted",
-        "previewDimensions": [640, 426]
-    },
-    {
-        "filename": "sample_640×426.fts",
-        "extension": "fts",
-        "source": "https://filesamples.com/samples/image/fts/sample_640×426.fts",
-        "sha256": "b79b1e94ab60b8f803ed25990eb4a03470a3f44dde39533db12eb1ee9810f7d4",
-        "bytes": 823680,
-        "expected": "converted",
-        "previewDimensions": [640, 426]
-    },
-    {
-        "filename": "sample_640×426.gif",
-        "extension": "gif",
-        "source": "https://filesamples.com/samples/image/gif/sample_640×426.gif",
-        "sha256": "eb04e3ff38fc7ecba1f7715ca7dae26b24e03766dc7c43ddeec75d5f1af74acd",
-        "bytes": 194757,
-        "expected": "unchanged",
-        "previewDimensions": [640, 426]
-    },
-    {
-        "filename": "sample_640×426.hdr",
-        "extension": "hdr",
-        "source": "https://filesamples.com/samples/image/hdr/sample_640×426.hdr",
-        "sha256": "1f3c119782a6e7c5e64238ede723b1bfdc9282ad6c450c0af9e9e3c2faf9200a",
-        "bytes": 912879,
-        "expected": "converted",
-        "previewDimensions": [640, 426]
-    },
-    {
-        "filename": "sample1.heic",
-        "extension": "heic",
-        "source": "https://filesamples.com/samples/image/heic/sample1.heic",
-        "sha256": "00d9e0636b645036f77b3809fcd26a29df71b9ee66f2865fd8729b894aeabf59",
-        "bytes": 293608,
-        "expected": "unchanged",
-        "previewDimensions": [1440, 960]
-    },
-    {
-        "filename": "sample1.heif",
-        "extension": "heif",
-        "source": "https://filesamples.com/samples/image/heif/sample1.heif",
-        "sha256": "46ac93516093b70bfed23d11f651819a4fb946088a6a933d6a5d34f4fb967bad",
-        "bytes": 2503495,
-        "expected": "unchanged",
-        "previewDimensions": [8736, 5856]
-    },
-    {
-        "filename": "sample_640×426.ico",
-        "extension": "ico",
-        "source": "https://filesamples.com/samples/image/ico/sample_640×426.ico",
-        "sha256": "f285edeacbe36299e47b52dcecfa53477c6918cb1525f715791a5adca01785ff",
-        "bytes": 179582,
-        "expected": "unchanged",
-        "previewDimensions": [256, 170]
-    },
-    {
-        "filename": "sample1.jfif",
-        "extension": "jfif",
-        "source": "https://filesamples.com/samples/image/jfif/sample1.jfif",
-        "sha256": "12f2db0b41b06ce24c4f72b24647444159564778eda67420f7b4d8cfc36b090b",
-        "bytes": 80996,
-        "expected": "unchanged",
-        "previewDimensions": [1024, 512]
-    },
-    {
-        "filename": "sample1.jp2",
-        "extension": "jp2",
-        "source": "https://filesamples.com/samples/image/jp2/sample1.jp2",
-        "sha256": "c3764a441a4f4a678b6b4575022733b91320d54fcd87da913b6cd2860faf6fa3",
-        "bytes": 670265,
-        "expected": "converted",
-        "previewDimensions": [2717, 3701]
-    },
-    {
-        "filename": "sample_640×426.jpe",
-        "extension": "jpe",
-        "source": "https://filesamples.com/samples/image/jpe/sample_640×426.jpe",
-        "sha256": "2de469409abf8781d38e63fcb26149404c18067906054b75731e2acc57275214",
-        "bytes": 88731,
-        "expected": "unchanged",
-        "previewDimensions": [640, 426]
-    },
-    {
-        "filename": "sample_640×426.jpeg",
-        "extension": "jpeg",
-        "source": "https://filesamples.com/samples/image/jpeg/sample_640×426.jpeg",
-        "sha256": "2de469409abf8781d38e63fcb26149404c18067906054b75731e2acc57275214",
-        "bytes": 88731,
-        "expected": "unchanged",
-        "previewDimensions": [640, 426]
-    },
-    {
-        "filename": "sample_640×426.jpg",
-        "extension": "jpg",
-        "source": "https://filesamples.com/samples/image/jpg/sample_640×426.jpg",
-        "sha256": "2de469409abf8781d38e63fcb26149404c18067906054b75731e2acc57275214",
-        "bytes": 88731,
-        "expected": "unchanged",
-        "previewDimensions": [640, 426]
-    },
-    {
-        "filename": "sample_640×426.jps",
-        "extension": "jps",
-        "source": "https://filesamples.com/samples/image/jps/sample_640×426.jps",
-        "sha256": "2de469409abf8781d38e63fcb26149404c18067906054b75731e2acc57275214",
-        "bytes": 88731,
-        "expected": "unchanged",
-        "previewDimensions": [640, 426]
-    },
-    {
-        "filename": "sample_1280×853.mng",
-        "extension": "mng",
-        "source": "https://filesamples.com/samples/image/mng/sample_1280×853.mng",
-        "sha256": "7a0d17857ce7a5e73a234063b92eb85cdfb680dd124d036bc81ee02c7c56b7db",
-        "bytes": 2068883,
-        "expected": "converted",
-        "previewDimensions": [1280, 853]
-    },
-    {
         "filename": "sample1.nef",
-        "extension": "nef",
         "source": "https://filesamples.com/samples/image/nef/sample1.nef",
         "sha256": "9b8427deb4d29d220303fa0300c08015644fb11fa03746ff57d3180350f450a2",
-        "bytes": 19300180,
-        "expected": "converted",
         "previewDimensions": [2832, 4256]
     },
     {
-        "filename": "sample1.nrw",
-        "extension": "nrw",
-        "source": "https://filesamples.com/samples/image/nrw/sample1.nrw",
-        "sha256": "563cb81e6aa0a857804ff09c8932074399c654e6b153b53cbc37a05565531cd7",
-        "bytes": 16360505,
-        "expected": "converted",
-        "previewDimensions": [3648, 2736]
-    },
-    {
         "filename": "sample1.orf",
-        "extension": "orf",
         "source": "https://filesamples.com/samples/image/orf/sample1.orf",
         "sha256": "38ce618311387cd081be3ea74e338043f86a3327082b7b802e239aec8e40c6bf",
-        "bytes": 14127616,
-        "expected": "converted",
         "previewDimensions": [1600, 1200]
     },
     {
-        "filename": "sample_640×426.pam",
-        "extension": "pam",
-        "source": "https://filesamples.com/samples/image/pam/sample_640×426.pam",
-        "sha256": "6c738970e8e1eeb5e5f06692e8402079485508cd76c11096af93714f8b90645c",
-        "bytes": 817983,
-        "expected": "converted",
-        "previewDimensions": [640, 426]
-    },
-    {
-        "filename": "sample_640×426.pbm",
-        "extension": "pbm",
-        "source": "https://filesamples.com/samples/image/pbm/sample_640×426.pbm",
-        "sha256": "3dc45bb1a2bab1242566153c00316f64a8f12b1531bdbc264971aab592139062",
-        "bytes": 34091,
-        "expected": "converted",
-        "previewDimensions": [640, 426]
-    },
-    {
-        "filename": "sample_640×426.pcd",
-        "extension": "pcd",
-        "source": "https://filesamples.com/samples/image/pcd/sample_640×426.pcd",
-        "sha256": "b0d94dca536e68bf83c269bf8259f15c1bc96c0deb958c59e40d12c592effee8",
-        "bytes": 788480,
-        "expected": "unsupported",
-        "note": "Out of scope"
-    },
-    {
-        "filename": "sample_640×426.pcx",
-        "extension": "pcx",
-        "source": "https://filesamples.com/samples/image/pcx/sample_640×426.pcx",
-        "sha256": "1c11daa74f46b5bd47affc43218a7864bd9282b5ec12016e51b9a5efb2a85ba8",
-        "bytes": 861288,
-        "expected": "converted",
-        "previewDimensions": [640, 426]
-    },
-    {
-        "filename": "sample1.pef",
-        "extension": "pef",
-        "source": "https://filesamples.com/samples/image/pef/sample1.pef",
-        "sha256": "24c078fc4c0d0ac65469c916fbee53166e585edbac426285de5d3bfa625be812",
-        "bytes": 21051030,
-        "expected": "converted",
-        "previewDimensions": [4928, 3264]
-    },
-    {
-        "filename": "sample1.pes",
-        "extension": "pes",
-        "source": "https://filesamples.com/samples/image/pes/sample1.pes",
-        "sha256": "80f68a2cef0972d08aeda425d762d39c2a702a2fbf34d347d7e911b164047122",
-        "bytes": 75156,
-        "expected": "unsupported",
-        "note": "Embroidery design, not a photo"
-    },
-    {
-        "filename": "sample_640×426.pfm",
-        "extension": "pfm",
-        "source": "https://filesamples.com/samples/image/pfm/sample_640×426.pfm",
-        "sha256": "11265d8326c5095c36ee237144bbd9ab3980848f3932468a801f4a8d263a885b",
-        "bytes": 3271695,
-        "expected": "converted",
-        "previewDimensions": [640, 426]
-    },
-    {
-        "filename": "sample_640×426.pgm",
-        "extension": "pgm",
-        "source": "https://filesamples.com/samples/image/pgm/sample_640×426.pgm",
-        "sha256": "1b52fce8d155c61e87474baed6c5fffa07fee2ff9d10847e5b9adb6b0b21f708",
-        "bytes": 272655,
-        "expected": "converted",
-        "previewDimensions": [640, 426]
-    },
-    {
-        "filename": "sample_640×426.picon",
-        "extension": "picon",
-        "source": "https://filesamples.com/samples/image/picon/sample_640×426.picon",
-        "sha256": "fd9da25e2f4042851db38fd7f671a7928514e1ef4d2067182d30efec06da7c5a",
-        "bytes": 2220,
-        "expected": "converted",
-        "previewDimensions": [48, 32]
-    },
-    {
-        "filename": "sample_640×426.pict",
-        "extension": "pict",
-        "source": "https://filesamples.com/samples/image/pict/sample_640×426.pict",
-        "sha256": "a1d42119c5e947207565213cb84fbf1532bb273e34ce1c45b5c13acf3c0d7c64",
-        "bytes": 805886,
-        "expected": "converted",
-        "previewDimensions": [640, 426]
-    },
-    {
-        "filename": "sample_640×426.png",
-        "extension": "png",
-        "source": "https://filesamples.com/samples/image/png/sample_640×426.png",
-        "sha256": "80babf09b223f1049a5b8216fb5de60ae6dd956e6872e76f838a1c57a5e34147",
-        "bytes": 534283,
-        "expected": "unchanged",
-        "previewDimensions": [640, 426]
-    },
-    {
-        "filename": "sample_1280×853.pnm",
-        "extension": "pnm",
-        "source": "https://filesamples.com/samples/image/pnm/sample_1280×853.pnm",
-        "sha256": "e3702b0f567945a6c15c7adb24bca9f361eff826ba35f1ac41715042caa8687b",
-        "bytes": 3275536,
-        "expected": "converted",
-        "previewDimensions": [1280, 853]
-    },
-    {
-        "filename": "sample_640×426.ppm",
-        "extension": "ppm",
-        "source": "https://filesamples.com/samples/image/ppm/sample_640×426.ppm",
-        "sha256": "5093be78f788b2c050dc828647c22e5e572e7cafdb5b6b96b33d5fbf7ce9bccd",
-        "bytes": 817935,
-        "expected": "converted",
-        "previewDimensions": [640, 426]
-    },
-    {
-        "filename": "sample_640×426.psd",
-        "extension": "psd",
-        "source": "https://filesamples.com/samples/image/psd/sample_640×426.psd",
-        "sha256": "58be12be3ff6b05b4cdba8211cd466d9a307a9fe02819b308fae8256f9cccf74",
-        "bytes": 1635988,
-        "expected": "converted",
-        "previewDimensions": [640, 426]
-    },
-    {
         "filename": "sample1.raf",
-        "extension": "raf",
         "source": "https://filesamples.com/samples/image/raf/sample1.raf",
         "sha256": "ac1e884a298e1db3fa39805a46bce7aca31077a687530d3eb4e33683a1a0c419",
-        "bytes": 56414016,
-        "expected": "converted",
         "previewDimensions": [4416, 2944]
     },
     {
-        "filename": "sample_640×426.ras",
-        "extension": "ras",
-        "source": "https://filesamples.com/samples/image/ras/sample_640×426.ras",
-        "sha256": "63ab27d238b31ce04c507bbf6364a001fa97116eee17b69446405a1077b55688",
-        "bytes": 817952,
-        "expected": "converted",
-        "previewDimensions": [640, 426]
-    },
-    {
         "filename": "sample1.rw2",
-        "extension": "rw2",
         "source": "https://filesamples.com/samples/image/rw2/sample1.rw2",
         "sha256": "2d1b2699db153e2fdce84a82f756e34356192d963f0ff6ad9a16fa8d40a5ca75",
-        "bytes": 17459200,
-        "expected": "converted",
         "previewDimensions": [1920, 1280]
     },
     {
-        "filename": "sample_640×426.sgi",
-        "extension": "sgi",
-        "source": "https://filesamples.com/samples/image/sgi/sample_640×426.sgi",
-        "sha256": "57f08234f4a1878fc00073d339c3af84997316bb5715946488c6a34cff0259bd",
-        "bytes": 819440,
-        "expected": "converted",
-        "previewDimensions": [640, 426]
-    },
-    {
-        "filename": "sample_640×426.svg",
-        "extension": "svg",
-        "source": "https://filesamples.com/samples/image/svg/sample_640×426.svg",
-        "sha256": "6c080cb0dcdb660db9e2865e0d3349f3263183e58c9345cc6122a4130ea3c8a5",
-        "bytes": 119951,
-        "expected": "unsupported",
-        "note": "Out of scope"
-    },
-    {
-        "filename": "sample_640×426.tga",
-        "extension": "tga",
-        "source": "https://filesamples.com/samples/image/tga/sample_640×426.tga",
-        "sha256": "2c9da2262b103f46af58432b9f0d467f9b5963ce2d269c7e518a8ec4a3687698",
-        "bytes": 817938,
-        "expected": "converted",
-        "previewDimensions": [640, 426]
-    },
-    {
-        "filename": "sample_640×426.tiff",
-        "extension": "tiff",
-        "source": "https://filesamples.com/samples/image/tiff/sample_640×426.tiff",
-        "sha256": "099732f6173b5e0e3466067d2c914e8e27ffb3f6a349aea2ac5233172ee3b8f4",
-        "bytes": 818184,
-        "expected": "converted",
-        "previewDimensions": [640, 426]
-    },
-    {
-        "filename": "sample_640×426.wbmp",
-        "extension": "wbmp",
-        "source": "https://filesamples.com/samples/image/wbmp/sample_640×426.wbmp",
-        "sha256": "6a554d92efeea338fbe8671a7df591b7dfc9c19f337becf08132541f8f54d115",
-        "bytes": 34086,
-        "expected": "converted",
-        "previewDimensions": [640, 426]
-    },
-    {
-        "filename": "sample1.webp",
-        "extension": "webp",
-        "source": "https://filesamples.com/samples/image/webp/sample1.webp",
-        "sha256": "c90994e27f7e26c6b3a94e8a4ebf2ccd46b974852ef3eaf3686d2270cf340abf",
-        "bytes": 658538,
-        "expected": "unchanged",
-        "previewDimensions": [4275, 2451]
-    },
-    {
-        "filename": "sample_1280×853.xbm",
-        "extension": "xbm",
-        "source": "https://filesamples.com/samples/image/xbm/sample_1280×853.xbm",
-        "sha256": "42331960bf6fd393097f16255e2a51a3745c3ddfb3293f5d2eb5fe045f21f6fb",
-        "bytes": 853116,
-        "expected": "converted",
-        "previewDimensions": [1280, 853]
-    },
-    {
-        "filename": "sample_640×426.xpm",
-        "extension": "xpm",
-        "source": "https://filesamples.com/samples/image/xpm/sample_640×426.xpm",
-        "sha256": "4e83a70c776ae803f9f35b12d2cc46eb6de4b8fd6dde935041fbc0c76374a601",
-        "bytes": 551200,
-        "expected": "converted",
-        "previewDimensions": [640, 426]
-    },
-    {
-        "filename": "sample_640×426.xwd",
-        "extension": "xwd",
-        "source": "https://filesamples.com/samples/image/xwd/sample_640×426.xwd",
-        "sha256": "65acebfb931c524f06573bb2a49ee3cee8e43335970910fd466a7da279b5feda",
-        "bytes": 818021,
-        "expected": "converted",
-        "previewDimensions": [640, 426]
-    },
-    {
-        "filename": "RAW_EPSON_RD1.ERF",
-        "extension": "erf",
-        "source": "https://rawsamples.ch/raws/epson/rd1/RAW_EPSON_RD1.ERF",
-        "sha256": "af6b40f4f58db87afb7b00d5d2fdb7d623791c9ceb4727b37876ebca4a0fe5c2",
-        "bytes": 9994663,
-        "expected": "converted",
-        "note": "Genuine camera RAW fixture",
-        "previewDimensions": [640, 424]
-    },
-    {
         "filename": "RAW_CANON_1DSM2.CR2",
-        "extension": "cr2",
         "source": "https://rawsamples.ch/raws/canon/1dsm2/RAW_CANON_1DSM2.CR2",
         "sha256": "2b0caf37f2d9c6613f9b0279f11beeb150645239f3af38f19d80d92bbf753c60",
-        "bytes": 14914910,
-        "expected": "converted",
-        "note": "Genuine camera RAW fixture",
         "previewDimensions": [1024, 1536]
+    },
+    {
+        "filename": "SONY_ILCE6000.ARW",
+        "source": "https://raw.pixls.us/getfile.php/1971/nice/Sony - ILCE-6000 - 12bit 12bit compressed (3:2).ARW",
+        "sha256": "ce8b4957281a817d52a07a691e2468567b6c78223bd0b514ffc1c65b002b8d89",
+        "previewDimensions": [1616, 1080]
+    },
+    {
+        "filename": "CANON_M50_CRAW.CR3",
+        "source": "https://raw.pixls.us/getfile.php/2663/nice/Canon - EOS M50 - CRAW (3:2).CR3",
+        "sha256": "15384b775867ec4c42b11882837f1e368cedc0561832ffab271221e6bb80be4c",
+        "previewDimensions": [6000, 4000]
+    },
+    {
+        "filename": "CANON_SX70_RAW.CR3",
+        "source": "https://raw.pixls.us/getfile.php/3276/nice/Canon - PowerShot SX70 HS - RAW, 4:3 (4:3).CR3",
+        "sha256": "3b346078836f933f505338ba45965be17a39cac82bfffc7006db07e3af944839",
+        "previewDimensions": [5184, 3888]
+    },
+    {
+        "filename": "APPLE_IPHONE12_PRO.DNG",
+        "source": "https://raw.pixls.us/getfile.php/4264/nice/Apple - iPhone 12 Pro - 8bit (4:3).DNG",
+        "sha256": "e91e77a4533ed7cce551d83330676ea5c47dd5e55fb38adda7819366afdbdfc2",
+        "previewDimensions": [3024, 4032]
     }
 ]

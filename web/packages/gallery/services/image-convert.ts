@@ -1,82 +1,31 @@
 import { namedError } from "ente-base/error";
 import { ComlinkWorker } from "ente-base/worker/comlink-worker";
 import {
-    imageConversionFormat,
     imageConversionTimeout,
     maxImageConversionBytes,
-    maxImageConversionPixels,
-    type ConvertedImage,
     type ImageConversionMode,
+    type RAWImageFormat,
 } from "ente-media/image-formats";
 import { PromiseQueue, withTimeout } from "ente-utils/promise";
 import type { ImageConvertWorker } from "./image-convert.worker";
 
-const queue = new PromiseQueue<ConvertedImage>();
+const queue = new PromiseQueue<Blob>();
 let worker: ComlinkWorker<typeof ImageConvertWorker> | undefined;
 
 export const convertImage = (
     blob: Blob,
-    fileName: string,
+    format: RAWImageFormat,
     mode: ImageConversionMode,
     abortIfCancelled?: () => void,
-): Promise<ConvertedImage> =>
+): Promise<Blob> =>
     queue.add(async () => {
         abortIfCancelled?.();
-        let format = imageConversionFormat(fileName);
-        if (!format)
-            throw namedError(
-                "file_type_not_supported",
-                "No image decoder for this format",
-            );
         if (blob.size > maxImageConversionBytes)
             throw namedError(
                 "image_conversion_limit",
                 "Image exceeds the preview size limit",
             );
 
-        if (format.decoder == "XWD") {
-            const header = new DataView(await blob.slice(0, 100).arrayBuffer());
-            if (header.byteLength < 100 || header.getUint32(4) != 7)
-                throw namedError(
-                    "file_type_not_supported",
-                    "Invalid XWD header",
-                );
-            const width = header.getUint32(16),
-                height = header.getUint32(20);
-            if (!width || !height || width * height > maxImageConversionPixels)
-                throw namedError(
-                    "image_conversion_limit",
-                    "XWD exceeds the preview pixel limit",
-                );
-            const { ffmpegExecWeb } = await import("./ffmpeg/web");
-            const {
-                ffmpegPathPlaceholder,
-                inputPathPlaceholder,
-                outputPathPlaceholder,
-            } = await import("./ffmpeg/constants");
-            const png = await ffmpegExecWeb(
-                [
-                    ffmpegPathPlaceholder,
-                    "-f",
-                    "image2pipe",
-                    "-c:v",
-                    "xwd",
-                    "-i",
-                    inputPathPlaceholder,
-                    "-frames:v",
-                    "1",
-                    outputPathPlaceholder,
-                ],
-                blob,
-                "png",
-                imageConversionTimeout,
-                abortIfCancelled,
-            );
-            blob = new Blob([png], { type: "image/png" });
-            format = { decoder: "PNG", mimeType: "image/png" };
-        }
-
-        abortIfCancelled?.();
         const current = (worker ??= new ComlinkWorker<
             typeof ImageConvertWorker
         >(

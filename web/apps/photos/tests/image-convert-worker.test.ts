@@ -23,13 +23,7 @@ beforeEach(() => {
     vi.resetModules();
     vi.useFakeTimers();
     mocks.workers.length = 0;
-    mocks.convert
-        .mockReset()
-        .mockResolvedValue({
-            blob: new Blob(),
-            sourceWidth: 1,
-            sourceHeight: 1,
-        });
+    mocks.convert.mockReset().mockResolvedValue(new Blob());
     vi.stubGlobal(
         "Worker",
         class extends EventTarget {
@@ -53,11 +47,11 @@ test("loads lazily and serializes concurrent conversions", async () => {
                 finish = resolve;
             }),
     );
-    const first = convertImage(new Blob(), "one.ppm", "thumbnail");
-    const second = convertImage(new Blob(), "two.ppm", "view");
+    const first = convertImage(new Blob(), "CR2", "thumbnail");
+    const second = convertImage(new Blob(), "NEF", "view");
     await vi.advanceTimersByTimeAsync(0);
     expect(mocks.convert).toHaveBeenCalledOnce();
-    finish({ blob: new Blob(), sourceWidth: 1, sourceHeight: 1 });
+    finish(new Blob());
     await Promise.all([first, second]);
     expect(mocks.convert).toHaveBeenCalledTimes(2);
     expect(mocks.workers).toHaveLength(1);
@@ -80,9 +74,9 @@ test.each(["timeout", "crash", "cancel", "decode error"])(
                       /* Simulate a stalled decoder. */
                   }),
         );
-        const first = convertImage(new Blob(), "one.ppm", "thumbnail", abort);
+        const first = convertImage(new Blob(), "CR2", "thumbnail", abort);
         const rejected = expect(first).rejects.toThrow();
-        const next = convertImage(new Blob(), "two.ppm", "view");
+        const next = convertImage(new Blob(), "NEF", "view");
         await vi.advanceTimersByTimeAsync(0);
         if (failure == "timeout") await vi.advanceTimersByTimeAsync(60_000);
         else if (failure == "cancel") {
@@ -104,25 +98,22 @@ test("rejects a cancelled queued job before starting its decoder", async () => {
     const { convertImage } =
         await import("ente-gallery/services/image-convert");
     await expect(
-        convertImage(new Blob(), "one.ppm", "thumbnail", () => {
+        convertImage(new Blob(), "CR2", "thumbnail", () => {
             throw new Error("cancelled");
         }),
     ).rejects.toThrow("cancelled");
     expect(mocks.workers).toHaveLength(0);
 });
 
-test("rejects oversized input and malformed XWD before creating a worker", async () => {
+test("rejects oversized input before creating a worker", async () => {
     const { convertImage } =
         await import("ente-gallery/services/image-convert");
     await expect(
         convertImage(
             { size: 100 * 1024 * 1024 + 1 } as Blob,
-            "one.ppm",
+            "CR2",
             "thumbnail",
         ),
     ).rejects.toHaveProperty("name", "image_conversion_limit");
-    await expect(
-        convertImage(new Blob([new Uint8Array(100)]), "one.xwd", "thumbnail"),
-    ).rejects.toHaveProperty("name", "file_type_not_supported");
     expect(mocks.workers).toHaveLength(0);
 });

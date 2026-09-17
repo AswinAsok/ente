@@ -1,9 +1,7 @@
 import {
-    AlphaAction,
     ColorProfile,
     ColorSpace,
     initializeImageMagick,
-    MagickColors,
     MagickFormat,
     MagickImage,
     MagickReadSettings,
@@ -17,9 +15,8 @@ import {
     maxImageConversionPixels,
     maxImageThumbnailBytes,
     maxImageThumbnailDimension,
-    type ConvertedImage,
-    type ImageConversionFormat,
     type ImageConversionMode,
+    type RAWImageFormat,
 } from "ente-media/image-formats";
 
 export const initializeImageDecoder = async (wasm: URL | Uint8Array) => {
@@ -27,7 +24,6 @@ export const initializeImageDecoder = async (wasm: URL | Uint8Array) => {
     ResourceLimits.memory = 512n * 1024n * 1024n;
     ResourceLimits.disk = 0n;
     // The decoder also counts temporary working images, not just input frames.
-    // frameCount below still selects only the first frame / merged PSD image.
     ResourceLimits.listLength = 16n;
     ResourceLimits.width = BigInt(maxImageConversionPixels);
     ResourceLimits.height = BigInt(maxImageConversionPixels);
@@ -50,9 +46,9 @@ export const checkImageDimensions = (width: number, height: number) => {
 
 export const decodeImage = (
     data: Uint8Array,
-    format: ImageConversionFormat,
+    format: RAWImageFormat,
     mode: ImageConversionMode,
-): ConvertedImage => {
+): Blob => {
     if (data.byteLength > maxImageConversionBytes)
         throw namedError(
             "image_conversion_limit",
@@ -62,11 +58,11 @@ export const decodeImage = (
     let image = MagickImage.create();
     try {
         const settings = new MagickReadSettings({
-            format: format.decoder as MagickFormat,
+            format: format as MagickFormat,
             frameIndex: 0,
             frameCount: 1,
         });
-        if (format.raw) settings.setDefine("dng:read-thumbnail", "true");
+        settings.setDefine("dng:read-thumbnail", "true");
         image.ping(data, settings);
         checkImageDimensions(image.width, image.height);
         const orientation = image.orientation;
@@ -74,9 +70,7 @@ export const decodeImage = (
         const sourceWidth = rotated ? image.height : image.width;
         const sourceHeight = rotated ? image.width : image.height;
 
-        const previewProfile = format.raw
-            ? image.getProfile("dng:thumbnail")?.data
-            : undefined;
+        const previewProfile = image.getProfile("dng:thumbnail")?.data;
         const preview = previewProfile && Uint8Array.from(previewProfile);
         // Keep the probe's RAW metadata from leaking into an embedded JPEG.
         image.dispose();
@@ -108,8 +102,7 @@ export const decodeImage = (
             image.transformColorSpace(new ColorProfile(sRGBProfile));
         else image.colorSpace = ColorSpace.sRGB;
 
-        const blob = mode == "thumbnail" ? thumbnail(image) : viewImage(image);
-        return { blob, sourceWidth, sourceHeight };
+        return mode == "thumbnail" ? thumbnail(image) : viewImage(image);
     } catch (e) {
         if (
             isNamedError(e, "image_conversion_limit") ||
@@ -118,7 +111,7 @@ export const decodeImage = (
             throw e;
         throw namedError(
             "file_type_not_supported",
-            `Could not decode ${format.decoder} image`,
+            `Could not decode ${format} image`,
             { cause: e },
         );
     } finally {
@@ -126,10 +119,10 @@ export const decodeImage = (
     }
 };
 
-const writeImage = (image: IMagickImage, format: MagickFormat, mime: string) =>
+const writeJPEG = (image: IMagickImage) =>
     image.write(
-        format,
-        (bytes) => new Blob([Uint8Array.from(bytes)], { type: mime }),
+        MagickFormat.Jpeg,
+        (bytes) => new Blob([Uint8Array.from(bytes)], { type: "image/jpeg" }),
     );
 
 const thumbnail = (image: IMagickImage) => {
@@ -142,12 +135,10 @@ const thumbnail = (image: IMagickImage) => {
             Math.max(1, Math.round(image.width * scale)),
             Math.max(1, Math.round(image.height * scale)),
         );
-    image.backgroundColor = MagickColors.White;
-    image.alpha(AlphaAction.Remove);
     image.strip();
     image.quality = 70;
     for (;;) {
-        const blob = writeImage(image, MagickFormat.Jpeg, "image/jpeg");
+        const blob = writeJPEG(image);
         if (blob.size <= maxImageThumbnailBytes) return blob;
         if (image.quality > 40) image.quality -= 10;
         else
@@ -161,9 +152,7 @@ const thumbnail = (image: IMagickImage) => {
 const viewImage = (image: IMagickImage) => {
     image.quality = 90;
     image.strip();
-    return image.hasAlpha
-        ? writeImage(image, MagickFormat.Png, "image/png")
-        : writeImage(image, MagickFormat.Jpeg, "image/jpeg");
+    return writeJPEG(image);
 };
 
 // CC0 sRGB-v4 profile from https://github.com/saucecontrol/Compact-ICC-Profiles.

@@ -6,7 +6,6 @@ import {
     KnownNonMediaFileExtensions,
     type FileTypeInfo,
 } from "ente-media/file-type";
-import { imageConversionFormat } from "ente-media/image-formats";
 import { fileTypeFromBuffer } from "file-type";
 
 export const detectFileTypeInfo = async (file: File): Promise<FileTypeInfo> =>
@@ -15,57 +14,40 @@ export const detectFileTypeInfo = async (file: File): Promise<FileTypeInfo> =>
 export const detectFileTypeInfoFromChunk = async (
     readInitialChunk: () => Promise<Uint8Array | undefined>,
     fileNameOrPath: string,
-    validateImage?: () => Promise<void>,
 ): Promise<FileTypeInfo> => {
-    const extension = lowercaseExtension(fileNameOrPath);
-    const conversion = imageConversionFormat(fileNameOrPath);
-    const initialChunk = await readInitialChunk();
-    let detected: FileTypeInfo | undefined;
-    let detectionError: unknown;
     try {
-        const { ext, mime } = await detectFileTypeFromBuffer(initialChunk!);
-        const fileType = mime.startsWith("image/")
-            ? FileType.image
-            : mime.startsWith("video/")
-              ? FileType.video
-              : undefined;
-        if (fileType === undefined)
-            throw fileTypeNotSupportedError(
-                `Unsupported file format (MIME type ${mime})`,
-            );
-        detected = { fileType, extension: ext, mimeType: mime };
-    } catch (e) {
-        detectionError = e;
-    }
-
-    // A TGA header can match the cursor signature. All other recognized
-    // signatures take precedence over the filename, including renamed JPEGs.
-    const ambiguousTGA = extension == "tga" && detected?.extension == "cur";
-    if (detected && !(ambiguousTGA && validateImage)) return detected;
-
-    if (conversion && validateImage) {
-        await validateImage();
-        return {
-            fileType: FileType.image,
-            extension: extension!,
-            mimeType: conversion.mimeType,
-        };
-    }
-    const known = KnownFileTypeInfos.find((f) => f.extension == extension);
-    if (known) return known;
-
-    if (
-        extension &&
-        (KnownNonMediaFileExtensions.includes(extension) ||
-            extension == "pes" ||
-            extension == "erf")
-    )
-        throw fileTypeNotSupportedError(
-            `Unsupported file format (extension ${extension})`,
-            { cause: detectionError },
+        const typeResult = await detectFileTypeFromBuffer(
+            (await readInitialChunk())!,
         );
 
-    throw detectionError;
+        const mimeType = typeResult.mime;
+
+        let fileType: FileType;
+        if (mimeType.startsWith("image/")) {
+            fileType = FileType.image;
+        } else if (mimeType.startsWith("video/")) {
+            fileType = FileType.video;
+        } else {
+            throw fileTypeNotSupportedError(
+                `Unsupported file format (MIME type ${mimeType})`,
+            );
+        }
+
+        return { fileType, extension: typeResult.ext, mimeType };
+    } catch (e) {
+        const extension = lowercaseExtension(fileNameOrPath);
+        const known = KnownFileTypeInfos.find((f) => f.extension == extension);
+        if (known) return known;
+
+        if (extension && KnownNonMediaFileExtensions.includes(extension)) {
+            throw fileTypeNotSupportedError(
+                `Unsupported file format (extension ${extension})`,
+                { cause: e },
+            );
+        }
+
+        throw e;
+    }
 };
 
 export const isFileTypeNotSupportedError = (e: unknown) =>

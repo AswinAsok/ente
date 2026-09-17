@@ -48,7 +48,7 @@ import {
 import { FileType } from "ente-media/file-type";
 import type { EnteFile } from "ente-media/file.js";
 import { isHEICExtension, needsJPEGConversion } from "ente-media/formats";
-import { imageConversionFormat } from "ente-media/image-formats";
+import { rawImageFormat } from "ente-media/image-formats";
 import {
     ImageEditorOverlay,
     type ImageEditorOverlayProps,
@@ -2184,7 +2184,7 @@ const fileIsEditableImage = (file: EnteFile) => {
     // A browser preview does not make the original format editable. Keep
     // Desktop's existing native editing formats, without adding new ones.
     if (
-        imageConversionFormat(fileFileName(file)) &&
+        rawImageFormat(fileFileName(file)) &&
         (!isDesktop || !extension || !needsJPEGConversion(extension))
     )
         return false;

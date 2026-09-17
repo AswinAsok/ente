@@ -3,7 +3,7 @@ import log from "ente-base/log";
 import { KnownFileTypeInfos } from "ente-media/file-type";
 import { isHEICExtension, needsJPEGConversion } from "ente-media/formats";
 import { heicToJPEG } from "ente-media/heic-convert";
-import { imageConversionFormat } from "ente-media/image-formats";
+import { rawImageFormat } from "ente-media/image-formats";
 import { detectFileTypeInfo } from "../utils/detect-type";
 
 type ConvertToMP4 = (blob: Blob) => Promise<Blob | Uint8Array<ArrayBuffer>>;
@@ -20,18 +20,12 @@ export const renderableImageBlobWeb = async (
 ): Promise<Blob> => {
     try {
         const file = new File([imageBlob], fileName);
-        const fileTypeInfo = await detectFileTypeInfo(file).catch(
-            (e: unknown) => {
-                // Formats without a reliable magic signature are validated by
-                // their decoder below, just as they are during upload.
-                if (!imageConversionFormat(fileName)) throw e;
-                return undefined;
-            },
-        );
-        if (imageConversionFormat(fileName, fileTypeInfo?.extension)) {
+        const fileTypeInfo = await detectFileTypeInfo(file);
+        const format = rawImageFormat(fileName, fileTypeInfo.extension);
+        if (format) {
             const { convertImage } = await import("./image-convert");
             try {
-                return (await convertImage(imageBlob, fileName, "view")).blob;
+                return await convertImage(imageBlob, format, "view");
             } catch (e) {
                 if (!opts?.convertToJPEG) throw e;
                 // Preserve Desktop's native fallback, including images beyond
@@ -44,7 +38,7 @@ export const renderableImageBlobWeb = async (
                 }
             }
         }
-        const { extension, mimeType } = fileTypeInfo!;
+        const { extension, mimeType } = fileTypeInfo;
 
         if (needsJPEGConversion(extension)) {
             log.debug(() => [`Converting ${fileName} to JPEG`, fileTypeInfo]);

@@ -1,8 +1,8 @@
 import { expose } from "comlink";
 import { logUnhandledErrorsAndRejectionsInWorker } from "ente-base/log-web";
 import type {
-    ImageConversionFormat,
     ImageConversionMode,
+    RAWImageFormat,
 } from "ente-media/image-formats";
 import { decodeImage, initializeImageDecoder } from "./image-convert-magick";
 
@@ -21,7 +21,7 @@ const initialize = async () => {
 export class ImageConvertWorker {
     async convert(
         blob: Blob,
-        format: ImageConversionFormat,
+        format: RAWImageFormat,
         mode: ImageConversionMode,
     ) {
         await (initialized ??= initialize());

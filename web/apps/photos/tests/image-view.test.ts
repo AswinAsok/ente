@@ -14,14 +14,14 @@ beforeEach(() => {
 test("shares converted viewing without replacing the original blob", async () => {
     const original = new Blob(["P3\n1 1\n255\n255 0 0\n"]);
     const preview = new Blob(["preview"], { type: "image/jpeg" });
-    convertImage.mockResolvedValue({ blob: preview });
+    convertImage.mockResolvedValue(preview);
     const native = vi.fn();
     expect(
-        await renderableImageBlobWeb(original, "sample.ppm", {
+        await renderableImageBlobWeb(original, "sample.orf", {
             convertToJPEG: native,
         }),
     ).toBe(preview);
-    expect(convertImage).toHaveBeenCalledWith(original, "sample.ppm", "view");
+    expect(convertImage).toHaveBeenCalledWith(original, "ORF", "view");
     expect(native).not.toHaveBeenCalled();
     expect(await original.text()).toBe("P3\n1 1\n255\n255 0 0\n");
 });
@@ -32,7 +32,7 @@ test("retains Desktop native conversion when the browser decoder fails", async (
     convertImage.mockRejectedValue(new Error("decoder limit"));
     const native = vi.fn().mockResolvedValue(preview);
     expect(
-        await renderableImageBlobWeb(original, "sample.tiff", {
+        await renderableImageBlobWeb(original, "sample.orf", {
             convertToJPEG: native,
         }),
     ).toBe(preview);
@@ -45,7 +45,7 @@ test("keeps the existing viewing fallback when both decoders fail", async () => 
     convertImage.mockRejectedValue(new Error("browser decode failed"));
     const onError = vi.fn();
     expect(
-        await renderableImageBlobWeb(original, "sample.tiff", {
+        await renderableImageBlobWeb(original, "sample.orf", {
             convertToJPEG: vi.fn().mockRejectedValue(nativeError),
             onConvertToJPEGError: onError,
         }),
