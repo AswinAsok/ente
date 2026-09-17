@@ -5,6 +5,7 @@ import {
 } from "ente-base/crypto/types";
 import type { CryptoWorker } from "ente-base/crypto/worker";
 import { ensureElectron } from "ente-base/electron";
+import { namedError } from "ente-base/error";
 import { basename, nameAndExtension } from "ente-base/file-name";
 import {
     ensureOk,
@@ -33,6 +34,11 @@ import {
     type ParsedMetadata,
 } from "ente-media/file-metadata";
 import { FileType, type FileTypeInfo } from "ente-media/file-type";
+import {
+    imageConversionFormat,
+    maxImageConversionBytes,
+    type ConvertedImage,
+} from "ente-media/image-formats";
 import { encodeLivePhoto } from "ente-media/live-photo";
 import {
     createMagicMetadata,
@@ -273,6 +279,7 @@ interface ThumbnailedFile {
     fileStreamOrData: FileStream | Uint8Array<ArrayBuffer>;
     thumbnail: Uint8Array<ArrayBuffer>;
     hasStaticThumbnail: boolean;
+    imageDimensions?: { width: number; height: number };
 }
 
 interface FileWithMetadata extends Omit<ThumbnailedFile, "hasStaticThumbnail"> {
@@ -508,7 +515,10 @@ export const upload = async (
         let assetDetails: ReadAssetDetailsResult;
 
         try {
-            assetDetails = await readAssetDetails(uploadAsset);
+            assetDetails = await readAssetDetails(
+                uploadAsset,
+                abortIfCancelled,
+            );
         } catch (e) {
             if (isFileTypeNotSupportedError(e)) {
                 log.error(`Not uploading ${fileName}`, e);
@@ -565,10 +575,23 @@ export const upload = async (
 
         abortIfCancelled();
 
-        const { fileStreamOrData, thumbnail, hasStaticThumbnail } =
-            await readAsset(fileTypeInfo, uploadAsset);
+        const {
+            fileStreamOrData,
+            thumbnail,
+            hasStaticThumbnail,
+            imageDimensions,
+        } = await readAsset(
+            fileTypeInfo,
+            uploadAsset,
+            assetDetails.preparedImage,
+            abortIfCancelled,
+        );
 
         if (hasStaticThumbnail) metadata.hasStaticThumbnail = true;
+        if (imageDimensions) {
+            publicMagicMetadata.w ??= imageDimensions.width;
+            publicMagicMetadata.h ??= imageDimensions.height;
+        }
 
         abortIfCancelled();
 
@@ -713,23 +736,26 @@ const readUploadItem = async (uploadItem: UploadItem): Promise<FileStream> => {
 };
 
 interface ReadAssetDetailsResult {
+    preparedImage?: ConvertedImage;
     fileTypeInfo: FileTypeInfo;
     fileSize: number;
     lastModifiedMs: number;
 }
 
-const readAssetDetails = async ({
-    isLivePhoto,
-    livePhotoAssets,
-    uploadItem,
-}: UploadAsset): Promise<ReadAssetDetailsResult> =>
+const readAssetDetails = async (
+    { isLivePhoto, livePhotoAssets, uploadItem }: UploadAsset,
+    abortIfCancelled?: () => void,
+): Promise<ReadAssetDetailsResult> =>
     isLivePhoto
-        ? readLivePhotoDetails(livePhotoAssets!)
-        : readImageOrVideoDetails(uploadItem!);
+        ? readLivePhotoDetails(livePhotoAssets!, abortIfCancelled)
+        : readImageOrVideoDetails(uploadItem!, abortIfCancelled);
 
-const readLivePhotoDetails = async ({ image, video }: LivePhotoAssets) => {
-    const img = await readImageOrVideoDetails(image);
-    const vid = await readImageOrVideoDetails(video);
+const readLivePhotoDetails = async (
+    { image, video }: LivePhotoAssets,
+    abortIfCancelled?: () => void,
+) => {
+    const img = await readImageOrVideoDetails(image, abortIfCancelled);
+    const vid = await readImageOrVideoDetails(video, abortIfCancelled);
 
     return {
         fileTypeInfo: {
@@ -738,21 +764,48 @@ const readLivePhotoDetails = async ({ image, video }: LivePhotoAssets) => {
         },
         fileSize: img.fileSize + vid.fileSize,
         lastModifiedMs: img.lastModifiedMs,
+        preparedImage: img.preparedImage,
     };
 };
 
-const readImageOrVideoDetails = async (uploadItem: UploadItem) => {
-    const { stream, fileSize, lastModifiedMs } =
+const readImageOrVideoDetails = async (
+    uploadItem: UploadItem,
+    abortIfCancelled?: () => void,
+) => {
+    const { stream, fileSize, lastModifiedMs, file } =
         await readUploadItem(uploadItem);
+    let preparedImage: ConvertedImage | undefined;
+    const fileName = uploadItemFileName(uploadItem);
+    const fileTypeInfo = await detectFileTypeInfoFromChunk(
+        async () => {
+            const reader = stream.getReader();
+            const chunk = (await reader.read()).value;
+            await reader.cancel();
+            return chunk;
+        },
+        fileName,
+        async () => {
+            abortIfCancelled?.();
+            if (fileSize > maxImageConversionBytes)
+                throw namedError(
+                    "image_conversion_limit",
+                    "Image exceeds the preview size limit",
+                );
+            const { convertImage } =
+                await import("ente-gallery/services/image-convert");
+            preparedImage = await convertImage(
+                file ??
+                    (await new Response(
+                        (await readUploadItem(uploadItem)).stream,
+                    ).blob()),
+                fileName,
+                "thumbnail",
+                abortIfCancelled,
+            );
+        },
+    );
 
-    const fileTypeInfo = await detectFileTypeInfoFromChunk(async () => {
-        const reader = stream.getReader();
-        const chunk = (await reader.read()).value;
-        await reader.cancel();
-        return chunk;
-    }, uploadItemFileName(uploadItem));
-
-    return { fileTypeInfo, fileSize, lastModifiedMs };
+    return { fileTypeInfo, fileSize, lastModifiedMs, preparedImage };
 };
 
 const readEntireStream = async (
@@ -1025,23 +1078,40 @@ const areFilesSame = (fFile: EnteFile, gm: FileMetadata) => {
 const readAsset = async (
     fileTypeInfo: FileTypeInfo,
     { isLivePhoto, uploadItem, livePhotoAssets }: UploadAsset,
+    preparedImage?: ConvertedImage,
+    abortIfCancelled?: () => void,
 ): Promise<ThumbnailedFile> =>
     isLivePhoto
-        ? await readLivePhoto(livePhotoAssets!, fileTypeInfo)
-        : await readImageOrVideo(uploadItem!, fileTypeInfo);
+        ? await readLivePhoto(
+              livePhotoAssets!,
+              fileTypeInfo,
+              preparedImage,
+              abortIfCancelled,
+          )
+        : await readImageOrVideo(
+              uploadItem!,
+              fileTypeInfo,
+              preparedImage,
+              abortIfCancelled,
+          );
 
 const readLivePhoto = async (
     livePhotoAssets: LivePhotoAssets,
     fileTypeInfo: FileTypeInfo,
+    preparedImage?: ConvertedImage,
+    abortIfCancelled?: () => void,
 ) => {
     const {
         fileStreamOrData: imageFileStreamOrData,
         thumbnail,
         hasStaticThumbnail,
+        imageDimensions,
     } = await augmentWithThumbnail(
         livePhotoAssets.image,
         { fileType: FileType.image, extension: fileTypeInfo.extension },
         await readUploadItem(livePhotoAssets.image),
+        preparedImage,
+        abortIfCancelled,
     );
     const videoFileStreamOrData = await readUploadItem(livePhotoAssets.video);
 
@@ -1061,29 +1131,54 @@ const readLivePhoto = async (
         }),
         thumbnail,
         hasStaticThumbnail,
+        imageDimensions,
     };
 };
 
 const readImageOrVideo = async (
     uploadItem: UploadItem,
     fileTypeInfo: FileTypeInfo,
+    preparedImage?: ConvertedImage,
+    abortIfCancelled?: () => void,
 ) => {
     const fileStream = await readUploadItem(uploadItem);
-    return augmentWithThumbnail(uploadItem, fileTypeInfo, fileStream);
+    return augmentWithThumbnail(
+        uploadItem,
+        fileTypeInfo,
+        fileStream,
+        preparedImage,
+        abortIfCancelled,
+    );
 };
 
 const augmentWithThumbnail = async (
     uploadItem: UploadItem,
     fileTypeInfo: FileTypeInfo,
     fileStream: FileStream,
+    preparedImage?: ConvertedImage,
+    abortIfCancelled?: () => void,
 ): Promise<ThumbnailedFile> => {
     let fileData: Uint8Array<ArrayBuffer> | undefined;
-    let thumbnail: Uint8Array<ArrayBuffer> | undefined;
+    let thumbnail = preparedImage
+        ? new Uint8Array(await preparedImage.blob.arrayBuffer())
+        : undefined;
+    let imageDimensions = preparedImage
+        ? {
+              width: preparedImage.sourceWidth,
+              height: preparedImage.sourceHeight,
+          }
+        : undefined;
     let hasStaticThumbnail = false;
 
     const electron = globalThis.electron;
 
-    if (electron && !(uploadItem instanceof File)) {
+    if (
+        !thumbnail &&
+        electron &&
+        !(uploadItem instanceof File) &&
+        (!imageConversionFormat(uploadItemFileName(uploadItem)) ||
+            fileStream.fileSize > maxImageConversionBytes)
+    ) {
         try {
             thumbnail = await generateThumbnailNative(
                 electron,
@@ -1101,7 +1196,14 @@ const augmentWithThumbnail = async (
             blob = uploadItem;
         } else {
             // Never buffer an unbounded video after native thumbnailing fails.
-            if (fileTypeInfo.fileType == FileType.image) {
+            if (
+                fileTypeInfo.fileType == FileType.image &&
+                (!imageConversionFormat(
+                    uploadItemFileName(uploadItem),
+                    fileTypeInfo.extension,
+                ) ||
+                    fileStream.fileSize <= maxImageConversionBytes)
+            ) {
                 const data = await readEntireStream(fileStream.stream);
                 blob = new Blob([data]);
 
@@ -1109,16 +1211,42 @@ const augmentWithThumbnail = async (
             } else {
                 const fileName = uploadItemFileName(uploadItem);
                 log.warn(
-                    `Not using browser based thumbnail generation fallback for video at path ${fileName}`,
+                    `Not buffering ${fileName} for browser thumbnail generation`,
                 );
             }
         }
 
         try {
             if (blob)
-                thumbnail = await generateThumbnailWeb(blob, fileTypeInfo);
+                ({ thumbnail, imageDimensions } = await generateThumbnailWeb(
+                    blob,
+                    fileTypeInfo,
+                    uploadItemFileName(uploadItem),
+                    abortIfCancelled,
+                ));
         } catch (e) {
+            abortIfCancelled?.();
             log.error("Web thumbnail creation failed", e);
+        }
+    }
+
+    if (
+        !thumbnail &&
+        electron &&
+        !(uploadItem instanceof File) &&
+        imageConversionFormat(uploadItemFileName(uploadItem)) &&
+        fileStream.fileSize <= maxImageConversionBytes
+    ) {
+        // Conversion formats try the shared decoder first. Retain the native
+        // fallback for variants it cannot read; large files already tried it.
+        try {
+            thumbnail = await generateThumbnailNative(
+                electron,
+                uploadItem,
+                fileTypeInfo,
+            );
+        } catch (e) {
+            log.error("Native thumbnail generation failed", e);
         }
     }
 
@@ -1131,6 +1259,7 @@ const augmentWithThumbnail = async (
         fileStreamOrData: fileData ?? fileStream,
         thumbnail,
         hasStaticThumbnail,
+        imageDimensions,
     };
 };
 

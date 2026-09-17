@@ -4,7 +4,7 @@ import { newID } from "ente-base/id";
 import log from "ente-base/log";
 import type { FFmpegCommand } from "ente-base/types/ipc";
 import { ensureArrayBufferBacked } from "ente-utils/bytes";
-import { PromiseQueue } from "ente-utils/promise";
+import { PromiseQueue, withTimeout } from "ente-utils/promise";
 import { z } from "zod";
 import {
     ffmpegPathPlaceholder,
@@ -13,6 +13,7 @@ import {
 } from "./constants";
 
 let _ffmpeg: Promise<FFmpeg> | undefined;
+let _ffmpegInstance: FFmpeg | undefined;
 
 // Interleaved ffmpeg.wasm calls can corrupt its memory.
 const _ffmpegTaskQueue = new PromiseQueue<Uint8Array<ArrayBuffer> | number>();
@@ -20,31 +21,70 @@ const _ffmpegTaskQueue = new PromiseQueue<Uint8Array<ArrayBuffer> | number>();
 const ffmpegLazy = (): Promise<FFmpeg> => (_ffmpeg ??= createFFmpeg());
 
 const createFFmpeg = async () => {
-    const ffmpeg = new FFmpeg();
-    await ffmpeg.load({
-        coreURL: "https://assets.ente.com/ffmpeg-core-0.12.10/ffmpeg-core.js",
-        wasmURL: "https://assets.ente.com/ffmpeg-core-0.12.10/ffmpeg-core.wasm",
-    });
-    return ffmpeg;
+    const ffmpeg = (_ffmpegInstance = new FFmpeg());
+    try {
+        await ffmpeg.load({
+            coreURL:
+                "https://assets.ente.com/ffmpeg-core-0.12.10/ffmpeg-core.js",
+            wasmURL:
+                "https://assets.ente.com/ffmpeg-core-0.12.10/ffmpeg-core.wasm",
+        });
+        return ffmpeg;
+    } catch (e) {
+        if (_ffmpegInstance === ffmpeg) resetFFmpeg();
+        throw e;
+    }
+};
+
+const resetFFmpeg = () => {
+    _ffmpegInstance?.terminate();
+    _ffmpegInstance = undefined;
+    _ffmpeg = undefined;
 };
 
 export const ffmpegExecWeb = async (
     command: FFmpegCommand,
     blob: Blob,
     outputFileExtension: string,
+    timeoutMs?: number,
+    abortIfCancelled?: () => void,
 ): Promise<Uint8Array<ArrayBuffer>> => {
-    const ffmpeg = await ffmpegLazy();
-    return _ffmpegTaskQueue.add(() =>
-        ffmpegExec(ffmpeg, command, outputFileExtension, blob),
-    ) as Promise<Uint8Array<ArrayBuffer>>;
+    return _ffmpegTaskQueue.add(async () => {
+        abortIfCancelled?.();
+        const operation = ffmpegLazy().then((ffmpeg) =>
+            ffmpegExec(ffmpeg, command, outputFileExtension, blob),
+        );
+        if (!timeoutMs) return operation;
+        let cancelTimer: ReturnType<typeof setInterval> | undefined;
+        const cancelled = new Promise<never>((_, reject) => {
+            if (abortIfCancelled)
+                cancelTimer = setInterval(() => {
+                    try {
+                        abortIfCancelled();
+                    } catch (e) {
+                        reject(e instanceof Error ? e : new Error(String(e)));
+                    }
+                }, 100);
+        });
+        try {
+            return await withTimeout(
+                Promise.race([operation, cancelled]),
+                timeoutMs,
+            );
+        } catch (e) {
+            resetFFmpeg();
+            throw e;
+        } finally {
+            clearInterval(cancelTimer);
+        }
+    }) as Promise<Uint8Array<ArrayBuffer>>;
 };
 
 export const determineVideoDurationWeb = async (
     blob: Blob,
 ): Promise<number> => {
-    const ffmpeg = await ffmpegLazy();
-    return _ffmpegTaskQueue.add(() =>
-        ffprobeExecVideoDuration(ffmpeg, blob),
+    return _ffmpegTaskQueue.add(async () =>
+        ffprobeExecVideoDuration(await ffmpegLazy(), blob),
     ) as Promise<number>;
 };
 

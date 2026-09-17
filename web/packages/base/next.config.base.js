@@ -118,6 +118,11 @@ const nextConfig = {
         isDesktop && { allowedDevOrigins: ["app"], distDir: ".next-desktop" }),
 
     webpack: (config, { dev, isServer }) => {
+        // ImageMagick initializes its own WASM runtime inside a lazy worker.
+        config.module.rules.push({
+            test: /magick\.wasm$/,
+            type: "asset/resource",
+        });
         if (!isServer) {
             config.resolve.fallback.fs = false;
             if (!dev) config.plugins.push(checkWasmChunks);

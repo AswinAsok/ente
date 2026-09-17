@@ -33,12 +33,11 @@ export const withTimeout = async <T>(
             ms,
         );
     });
-    const promiseAndCancelTimeout = async () => {
-        const result = await promise;
-        clearTimeout(timeoutId);
-        return result;
-    };
-    return Promise.race([promiseAndCancelTimeout(), rejectOnTimeout]);
+    try {
+        return await Promise.race([promise, rejectOnTimeout]);
+    } finally {
+        clearTimeout(timeoutId!);
+    }
 };
 
 export class PromiseQueue<T> {

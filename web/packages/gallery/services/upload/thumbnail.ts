@@ -9,6 +9,7 @@ import { FileType, type FileTypeInfo } from "ente-media/file-type";
 import { isHEICExtension } from "ente-media/formats";
 import { heicToJPEG } from "ente-media/heic-convert";
 import { scaledImageDimensions } from "ente-media/image";
+import { imageConversionFormat } from "ente-media/image-formats";
 import { withTimeout } from "ente-utils/promise";
 
 const maxThumbnailDimension = 720;
@@ -21,21 +22,49 @@ const canvasThumbnailGenerationTimeout = 30 * 1000;
 export const generateThumbnailWeb = async (
     blob: Blob,
     fileTypeInfo: FileTypeInfo,
-): Promise<Uint8Array<ArrayBuffer>> =>
+    fileName = `image.${fileTypeInfo.extension}`,
+    abortIfCancelled?: () => void,
+): Promise<{
+    thumbnail: Uint8Array<ArrayBuffer>;
+    imageDimensions?: { width: number; height: number };
+}> =>
     fileTypeInfo.fileType == FileType.image
-        ? await generateImageThumbnailWeb(blob, fileTypeInfo)
-        : await generateVideoThumbnailWeb(blob);
+        ? await generateImageThumbnailWeb(
+              blob,
+              fileTypeInfo,
+              fileName,
+              abortIfCancelled,
+          )
+        : { thumbnail: await generateVideoThumbnailWeb(blob) };
 
 const generateImageThumbnailWeb = async (
     blob: Blob,
     { extension }: FileTypeInfo,
+    fileName: string,
+    abortIfCancelled?: () => void,
 ) => {
+    if (imageConversionFormat(fileName, extension)) {
+        const { convertImage } = await import("../image-convert");
+        const image = await convertImage(
+            blob,
+            fileName,
+            "thumbnail",
+            abortIfCancelled,
+        );
+        return {
+            thumbnail: new Uint8Array(await image.blob.arrayBuffer()),
+            imageDimensions: {
+                width: image.sourceWidth,
+                height: image.sourceHeight,
+            },
+        };
+    }
     if (isHEICExtension(extension)) {
         log.debug(() => `Pre-converting HEIC to JPEG for thumbnail generation`);
         blob = await heicToJPEG(blob);
     }
 
-    return generateImageThumbnailUsingCanvas(blob);
+    return { thumbnail: await generateImageThumbnailUsingCanvas(blob) };
 };
 
 const generateImageThumbnailUsingCanvas = async (blob: Blob) => {
@@ -47,7 +76,8 @@ const generateImageThumbnailUsingCanvas = async (blob: Blob) => {
         await withTimeout(
             new Promise((resolve, reject) => {
                 const image = new Image();
-                image.setAttribute("src", imageURL);
+                image.onerror = () =>
+                    reject(new Error("Image decoding failed"));
                 image.onload = () => {
                     try {
                         const { width, height } = scaledImageDimensions(
@@ -64,6 +94,7 @@ const generateImageThumbnailUsingCanvas = async (blob: Blob) => {
                         reject(e);
                     }
                 };
+                image.src = imageURL;
             }),
             canvasThumbnailGenerationTimeout,
         );
