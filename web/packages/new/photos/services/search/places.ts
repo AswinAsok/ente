@@ -11,7 +11,6 @@ export const deriveLibraryPlaces = (
     cities: City[],
     tags: LocationTag[],
 ): LibraryPlace[] => {
-    // Index cities geographically instead of scanning every city per photo.
     const cells = new Map<string, City[]>();
     for (const city of cities) {
         const key = `${Math.floor(city.latitude)}:${Math.floor(city.longitude)}`;
@@ -59,7 +58,6 @@ export const deriveLibraryPlaces = (
         let distance = Infinity;
         const lat = Math.floor(location.latitude);
         const lng = Math.floor(location.longitude);
-        // Match the existing search radius, including its latitude scaling.
         const latitudeSpan = Math.min(
             180,
             Math.ceil(radiusScaleFactor(location.latitude)),
