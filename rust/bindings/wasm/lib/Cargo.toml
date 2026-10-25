@@ -16,6 +16,7 @@ crypto-blob = ["crypto"]
 crypto-file = ["crypto-blob", "dep:md-5"]
 crypto-seal = ["crypto"]
 legacy = ["session", "dep:ente-legacy", "dep:wasm-bindgen-futures"]
+location = ["dep:ente-location", "dep:serde", "dep:serde-wasm-bindgen", "dep:tsify"]
 locker = ["session", "dep:ente-locker"]
 prelogin = ["accounts", "crypto"]
 session = [
@@ -32,6 +33,7 @@ ente-collections = { workspace = true, optional = true }
 ente-contacts = { workspace = true, optional = true }
 ente-core.workspace = true
 ente-legacy = { workspace = true, optional = true }
+ente-location = { workspace = true, optional = true }
 ente-locker = { workspace = true, optional = true }
 js-sys.workspace = true
 log.workspace = true

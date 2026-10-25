@@ -10,6 +10,8 @@ pub mod contacts;
 pub mod crypto;
 #[cfg(feature = "legacy")]
 pub mod legacy;
+#[cfg(feature = "location")]
+pub mod location;
 #[cfg(feature = "locker")]
 pub mod locker;
 mod logging;

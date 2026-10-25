@@ -79,3 +79,10 @@ export const prepareCastPayload = async (
         BigInt(collectionID),
         collectionKey,
     );
+
+export type { LocationCityGroup, LocationIndex } from "./pkg/ente_photos_wasm";
+
+export const createLocationIndex = async (
+    cities: Uint8Array,
+    urbanCenters: Uint8Array,
+) => new (await wasm()).LocationIndex(cities, urbanCenters);

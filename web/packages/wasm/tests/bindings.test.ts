@@ -394,3 +394,9 @@ const combined = (header: string, ciphertext: string) =>
         Buffer.from(header, "base64"),
         Buffer.from(ciphertext, "base64"),
     ]);
+
+test("Photos rejects malformed location index data at the Wasm boundary", async () => {
+    await expect(
+        photos.createLocationIndex(new Uint8Array([0]), new Uint8Array([0])),
+    ).rejects.toThrow(Error);
+});

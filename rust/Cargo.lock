@@ -3032,6 +3032,7 @@ dependencies = [
  "ente-contacts",
  "ente-core",
  "ente-legacy",
+ "ente-location",
  "ente-locker",
  "js-sys",
  "log",

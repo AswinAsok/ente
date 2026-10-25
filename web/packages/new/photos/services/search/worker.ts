@@ -20,6 +20,7 @@ import {
     savedLocationTags,
     type LocationTag,
 } from "../user-entity";
+import { groupLocationCities } from "./location-index";
 import {
     deriveLibraryPlaces,
     isInsideCity,
@@ -84,9 +85,8 @@ export class SearchWorker {
     }
 
     async placesForFiles(files: EnteFile[]): Promise<LibraryPlace[]> {
-        if (!this.cities.length) this.cities = await fetchCities();
         const tags = await savedLocationTags();
-        return deriveLibraryPlaces(files, this.cities, tags);
+        return deriveLibraryPlaces(files, tags, groupLocationCities);
     }
 
     filterSearchableFiles(suggestion: SearchSuggestion) {

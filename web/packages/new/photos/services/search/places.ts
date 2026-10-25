@@ -4,20 +4,15 @@ import {
     fileCreationPhotoSortTime,
     fileLocation,
 } from "ente-media/file-metadata";
+import type { LocationCityGroup } from "ente-photos-wasm";
 import type { LocationTag } from "../user-entity";
 import type { City, LibraryPlace } from "./types";
-export const deriveLibraryPlaces = (
+
+export const deriveLibraryPlaces = async (
     files: EnteFile[],
-    cities: City[],
     tags: LocationTag[],
-): LibraryPlace[] => {
-    const cells = new Map<string, City[]>();
-    for (const city of cities) {
-        const key = `${Math.floor(city.latitude)}:${Math.floor(city.longitude)}`;
-        const cell = cells.get(key) ?? [];
-        cell.push(city);
-        cells.set(key, cell);
-    }
+    groupCities: (coordinates: Location[]) => Promise<LocationCityGroup[]>,
+): Promise<LibraryPlace[]> => {
     const places = new Map<string, LibraryPlace>();
     const add = (
         id: string,
@@ -31,19 +26,20 @@ export const deriveLibraryPlaces = (
             if (
                 fileCreationPhotoSortTime(file) >
                 fileCreationPhotoSortTime(place.coverFile)
-            ) {
+            )
                 place.coverFile = file;
-            }
         } else {
             places.set(id, { id, name, center, fileCount: 1, coverFile: file });
         }
     };
     const seen = new Set<number>();
+    const cityFiles: EnteFile[] = [];
+    const coordinates: Location[] = [];
     for (const file of files) {
         if (seen.has(file.id)) continue;
-        seen.add(file.id);
         const location = fileLocation(file);
         if (!location) continue;
+        seen.add(file.id);
         const tag = tags.find((tag) => isInsideLocationTag(location, tag));
         if (tag) {
             add(
@@ -52,40 +48,21 @@ export const deriveLibraryPlaces = (
                 tag.centerPoint,
                 file,
             );
-            continue;
+        } else {
+            cityFiles.push(file);
+            coordinates.push(location);
         }
-        let nearest: City | undefined;
-        let distance = Infinity;
-        const lat = Math.floor(location.latitude);
-        const lng = Math.floor(location.longitude);
-        const latitudeSpan = Math.min(
-            180,
-            Math.ceil(radiusScaleFactor(location.latitude)),
-        );
-        for (let x = lat - latitudeSpan; x <= lat + latitudeSpan; x++) {
-            for (let y = lng - 1; y <= lng + 1; y++) {
-                const wrapped = ((((y + 180) % 360) + 360) % 360) - 180;
-                for (const city of cells.get(`${x}:${wrapped}`) ?? []) {
-                    if (!isInsideCity(location, city)) continue;
-                    const d =
-                        (city.latitude - location.latitude) ** 2 +
-                        ((city.longitude - location.longitude) /
-                            radiusScaleFactor(location.latitude)) **
-                            2;
-                    if (d < distance) {
-                        nearest = city;
-                        distance = d;
-                    }
-                }
+    }
+    if (coordinates.length) {
+        for (const { city, coordinateIndices } of await groupCities(
+            coordinates,
+        )) {
+            const id = `city:${city.country}:${city.name}:${city.latitude}:${city.longitude}`;
+            for (const index of coordinateIndices) {
+                const file = cityFiles[index];
+                if (file) add(id, city.name, city, file);
             }
         }
-        if (nearest)
-            add(
-                `city:${nearest.name}:${nearest.latitude}:${nearest.longitude}`,
-                nearest.name,
-                nearest,
-                file,
-            );
     }
     return [...places.values()].sort(
         (a, b) => b.fileCount - a.fileCount || a.name.localeCompare(b.name),
