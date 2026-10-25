@@ -15,6 +15,7 @@ import { ensureLocalUser } from "ente-accounts/services/user";
 import { ActivityIndicator } from "ente-base/components/mui/ActivityIndicator";
 import { isSxArray } from "ente-base/components/utils/sx";
 import { useBaseContext } from "ente-base/context";
+import { ut } from "ente-base/i18n";
 import { downloadManager } from "ente-gallery/services/download";
 import { uniqueFilesByID } from "ente-gallery/utils/file";
 import { getLeaflet } from "ente-gallery/utils/leaflet";
@@ -31,6 +32,7 @@ import {
 } from "ente-new/photos/services/collection";
 import type { CollectionSummary } from "ente-new/photos/services/collection-summary";
 import { updateFilesVisibility } from "ente-new/photos/services/file";
+import type { LibraryPlace } from "ente-new/photos/services/search/types";
 import { t } from "i18next";
 import "leaflet/dist/leaflet.css";
 import React, {
@@ -71,6 +73,7 @@ interface CollectionMapProps extends Pick<
     | "onSelectPerson"
     | "emailByUserID"
 > {
+    selectedPlace?: LibraryPlace | undefined;
     collectionSummary: CollectionSummary;
     files: EnteFile[];
     mapFileSource: MapFileSource;
@@ -991,6 +994,7 @@ function createMarkerIcon(
 }
 
 export const CollectionMap: React.FC<CollectionMapProps> = ({
+    selectedPlace,
     collectionSummary,
     files,
     onRemotePull,
@@ -1141,6 +1145,7 @@ export const CollectionMap: React.FC<CollectionMapProps> = ({
             <Box sx={{ position: "relative", height: "100%", width: "100%" }}>
                 <CollectionSidebar
                     collectionSummary={collectionSummary}
+                    placeName={selectedPlace?.name}
                     visibleFiles={visibleFiles}
                     isVisiblePhotosUpdating={isVisiblePhotosUpdating}
                     user={user}
@@ -1165,6 +1170,7 @@ export const CollectionMap: React.FC<CollectionMapProps> = ({
                 />
                 <Box sx={{ width: "100%", height: "100%" }}>
                     <MapCanvas
+                        selectedPlace={selectedPlace}
                         mapComponents={mapComponents}
                         mapCenter={mapCenter}
                         mapIndex={mapIndex}
@@ -1190,6 +1196,7 @@ export const CollectionMap: React.FC<CollectionMapProps> = ({
 };
 
 interface CollectionSidebarProps {
+    placeName?: string | undefined;
     collectionSummary: CollectionSummary;
     visibleFiles: EnteFile[];
     isVisiblePhotosUpdating: boolean;
@@ -1218,6 +1225,7 @@ interface CollectionSidebarProps {
 const MOBILE_SIDEBAR_HEIGHT = "50%";
 
 function CollectionSidebar({
+    placeName,
     collectionSummary,
     visibleFiles,
     isVisiblePhotosUpdating,
@@ -1264,9 +1272,10 @@ function CollectionSidebar({
                             overflowWrap: "anywhere",
                         }}
                     >
-                        {collectionSummary.type === "all"
-                            ? t("map")
-                            : collectionSummary.name}
+                        {placeName ??
+                            (collectionSummary.type === "all"
+                                ? ut("Your map")
+                                : collectionSummary.name)}
                     </Typography>
                     <Typography
                         sx={{
@@ -1276,9 +1285,7 @@ function CollectionSidebar({
                             fontWeight: 500,
                         }}
                     >
-                        {t("photos_count", {
-                            count: collectionSummary.fileCount,
-                        })}
+                        {t("photos_count", { count: visibleFiles.length })}
                     </Typography>
                 </Stack>
                 <FileListContainer>
@@ -1335,6 +1342,7 @@ function CollectionSidebar({
 }
 
 interface MapCanvasProps {
+    selectedPlace: LibraryPlace | undefined;
     mapComponents: MapComponents;
     mapCenter: [number, number];
     mapIndex: MapIndex;
@@ -1351,6 +1359,7 @@ const leafletAttributionPrefix =
     '<a href="https://leafletjs.com" target="_blank" rel="noopener noreferrer">Leaflet</a>';
 
 const MapCanvas = React.memo(function MapCanvas({
+    selectedPlace,
     mapComponents,
     mapCenter,
     mapIndex,
@@ -1376,6 +1385,11 @@ const MapCanvas = React.memo(function MapCanvas({
                     maxZoom={MAX_MAP_ZOOM}
                     updateWhenZooming
                     referrerPolicy="strict-origin-when-cross-origin"
+                />
+                <MapPlaceFocus
+                    useMap={useMap}
+                    place={selectedPlace}
+                    defaultCenter={mapCenter}
                 />
                 <MapControls useMap={useMap} />
                 <MapClusters
@@ -1463,6 +1477,27 @@ const MapControls = React.memo(function MapControls({
         </>
     );
 });
+
+function MapPlaceFocus({
+    useMap,
+    place,
+    defaultCenter,
+}: {
+    useMap: MapComponents["useMap"];
+    place: LibraryPlace | undefined;
+    defaultCenter: [number, number];
+}) {
+    const map = useMap();
+    useEffect(() => {
+        map.setView(
+            place
+                ? [place.center.latitude, place.center.longitude]
+                : defaultCenter,
+            DEFAULT_MAP_ZOOM,
+        );
+    }, [map, place, defaultCenter]);
+    return null;
+}
 
 const isClusterFeature = (feature: MapFeature): feature is MapClusterFeature =>
     feature.properties.cluster === true;
@@ -1758,7 +1793,7 @@ const SidebarWrapper = styled(Box)(({ theme }) => ({
         bottom: 16,
         right: "auto",
         height: "auto",
-        width: "460px",
+        width: "420px",
     },
 }));
 

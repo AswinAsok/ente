@@ -36,6 +36,8 @@ import { isMLSupported } from "ente-new/photos/services/ml";
 import { t } from "i18next";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 
+import type { EnteFile } from "ente-media/file";
+import type { LibraryPlace } from "ente-new/photos/services/search/types";
 import type { RemotePullOpts } from ".";
 import {
     GalleryBarImpl,
@@ -43,6 +45,7 @@ import {
     type GalleryBarPresentationProps,
 } from "./BarImpl";
 import { NavigationSlide } from "./NavigationSlide";
+import { PlacesSidebar } from "./PlacesSidebar";
 import type { GalleryBarMode } from "./reducer";
 import { useNavigationContentMotion } from "./use-navigation-content-motion";
 
@@ -61,6 +64,9 @@ type PhotosNavigationShellProps = SearchBarProps & {
     onShowMap: () => void;
     isMapView: boolean;
     isMapSelected: boolean;
+    placesFiles: EnteFile[];
+    selectedPlace: LibraryPlace | undefined;
+    onSelectPlace: (place: LibraryPlace | undefined) => void;
     mode: GalleryBarMode;
     onChangeMode: (mode: GalleryBarMode) => boolean;
 };
@@ -88,7 +94,7 @@ export const PhotosNavigationShell: React.FC<
     const mobile = useMediaQuery(useTheme().breakpoints.down("md"));
     const panelOpen =
         railOpen &&
-        !!galleryNavigation &&
+        (!!galleryNavigation || props.isMapSelected) &&
         !props.isInSearchMode &&
         !navigationCollapsed;
     const contentRef = useNavigationContentMotion(
@@ -159,16 +165,29 @@ export const PhotosNavigationShell: React.FC<
         setNavigationCollapsed(false);
         if (mobile) showMobileNavigation();
     };
-    const galleryBar = galleryNavigation && (
-        <GalleryBarImpl
-            {...galleryNavigation}
-            mode={props.mode}
-            collapsed={!panelOpen}
+    const galleryBar = props.isMapSelected ? (
+        <PlacesSidebar
+            files={props.placesFiles}
+            selectedPlace={props.selectedPlace}
+            onSelectPlace={(place) => {
+                props.onSelectPlace(place);
+                closeMobileNavigation();
+            }}
+            mobile={mobile}
             mobileDrawerProps={mobileDrawerProps}
-            onCreateAlbum={openAlbumCreation}
-            onSelectCollectionID={selectCollection}
-            onSelectPerson={selectPerson}
         />
+    ) : (
+        galleryNavigation && (
+            <GalleryBarImpl
+                {...galleryNavigation}
+                mode={props.mode}
+                collapsed={!panelOpen}
+                mobileDrawerProps={mobileDrawerProps}
+                onCreateAlbum={openAlbumCreation}
+                onSelectCollectionID={selectCollection}
+                onSelectPerson={selectPerson}
+            />
+        )
     );
     return (
         <Stack
@@ -240,6 +259,19 @@ export const PhotosNavigationShell: React.FC<
                         {alternateHeader == null && (
                             <NormalNavigationRail
                                 {...props}
+                                onShowMap={() => {
+                                    if (props.isMapSelected) {
+                                        if (mobile) showMobileNavigation();
+                                        else
+                                            setNavigationCollapsed(
+                                                (collapsed) => !collapsed,
+                                            );
+                                    } else {
+                                        props.onShowMap();
+                                        setNavigationCollapsed(false);
+                                        if (mobile) showMobileNavigation();
+                                    }
+                                }}
                                 isHome={
                                     !props.isMapSelected &&
                                     props.mode == "albums" &&
@@ -268,24 +300,29 @@ export const PhotosNavigationShell: React.FC<
                         flexDirection: { xs: "column", md: "row" },
                     }}
                 >
-                    {galleryNavigation && !props.isInSearchMode && (
-                        <>
-                            <NavigationSlide
-                                open={panelOpen}
-                                width={328}
-                                reduceMotion={reduceMotion}
-                                disabled={mobile}
-                            >
-                                {galleryBar}
-                            </NavigationSlide>
-                            <CreateAlbumDialog
-                                {...albumNameInputVisibilityProps}
-                                isHidden={createInHiddenSection}
-                                onRemotePull={galleryNavigation.onRemotePull}
-                                onSelectCollectionID={selectCollection}
-                            />
-                        </>
-                    )}
+                    {(galleryNavigation || props.isMapSelected) &&
+                        !props.isInSearchMode && (
+                            <>
+                                <NavigationSlide
+                                    open={panelOpen}
+                                    width={328}
+                                    reduceMotion={reduceMotion}
+                                    disabled={mobile}
+                                >
+                                    {galleryBar}
+                                </NavigationSlide>
+                                {galleryNavigation && (
+                                    <CreateAlbumDialog
+                                        {...albumNameInputVisibilityProps}
+                                        isHidden={createInHiddenSection}
+                                        onRemotePull={
+                                            galleryNavigation.onRemotePull
+                                        }
+                                        onSelectCollectionID={selectCollection}
+                                    />
+                                )}
+                            </>
+                        )}
                     <Stack
                         ref={contentRef}
                         sx={{ flex: 1, minWidth: 0, minHeight: 0, gap: "8px" }}
@@ -425,23 +462,30 @@ const NormalNavigationRail: React.FC<
                 ...theme.applyStyles("dark", { bgcolor: "#3E3E3E" }),
             })}
         />
-        {(["albums", "people", "links"] as const).map((item) =>
+        {(["albums", "people", "places", "links"] as const).map((item) =>
             item == "people" && !isMLSupported ? null : (
-                <Tooltip key={item} title={t(item)}>
+                <Tooltip
+                    key={item}
+                    title={item == "places" ? ut("Places") : t(item)}
+                >
                     <FocusVisibleButton
                         color="secondary"
-                        aria-label={t(item)}
+                        aria-label={item == "places" ? ut("Places") : t(item)}
                         aria-pressed={
-                            navigationOpen &&
-                            !isHome &&
-                            !props.isInSearchMode &&
-                            (mode == item ||
-                                (item == "albums" &&
-                                    (mode == "hidden-albums" ||
-                                        mode == "archive-albums")))
+                            item == "places"
+                                ? isMapSelected
+                                : navigationOpen &&
+                                  !isHome &&
+                                  !props.isInSearchMode &&
+                                  (mode == item ||
+                                      (item == "albums" &&
+                                          (mode == "hidden-albums" ||
+                                              mode == "archive-albums")))
                         }
                         aria-haspopup={opensDialog ? "dialog" : undefined}
-                        onClick={() => onChangeMode(item)}
+                        onClick={() =>
+                            item == "places" ? onShowMap() : onChangeMode(item)
+                        }
                         sx={{
                             minWidth: 0,
                             width: 38,
@@ -463,7 +507,9 @@ const NormalNavigationRail: React.FC<
                                     ? DashboardSquare01Icon
                                     : item == "links"
                                       ? Link04Icon
-                                      : User02Icon
+                                      : item == "places"
+                                        ? Location01Icon
+                                        : User02Icon
                             }
                             size={20}
                             strokeWidth={1.8}
@@ -472,34 +518,6 @@ const NormalNavigationRail: React.FC<
                 </Tooltip>
             ),
         )}
-        <Tooltip title={t("map")}>
-            <FocusVisibleButton
-                color="secondary"
-                aria-label={t("map")}
-                aria-pressed={isMapSelected}
-                onClick={onShowMap}
-                sx={{
-                    minWidth: 0,
-                    width: 38,
-                    height: 38,
-                    flexShrink: 0,
-                    p: 0,
-                    borderRadius: "12px",
-                    color: "text.base",
-                    '&[aria-pressed="true"]': {
-                        color: "#FFFFFF",
-                        bgcolor: "accent.main",
-                        "&:hover": { bgcolor: "accent.main" },
-                    },
-                }}
-            >
-                <HugeiconsIcon
-                    icon={Location01Icon}
-                    size={20}
-                    strokeWidth={1.8}
-                />
-            </FocusVisibleButton>
-        </Tooltip>
         <Box sx={{ flex: 1 }} />
         <Tooltip title={t("settings")}>
             <FocusVisibleButton

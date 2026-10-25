@@ -144,3 +144,6 @@ const labelledFileTypes = (): LabelledFileType[] => [
     { fileType: FileType.video, label: t("video") },
     { fileType: FileType.livePhoto, label: t("live_photo") },
 ];
+
+export const placesForFiles = (files: EnteFile[]) =>
+    worker().then((w) => w.placesForFiles(files));

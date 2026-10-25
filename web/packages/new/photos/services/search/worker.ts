@@ -3,7 +3,6 @@ import * as chrono from "chrono-node";
 import { expose } from "comlink";
 import { HTTPError } from "ente-base/http";
 import { logUnhandledErrorsAndRejectionsInWorker } from "ente-base/log-web";
-import type { Location } from "ente-base/types";
 import type { Collection } from "ente-media/collection";
 import type { EnteFile } from "ente-media/file";
 import {
@@ -21,10 +20,16 @@ import {
     savedLocationTags,
     type LocationTag,
 } from "../user-entity";
+import {
+    deriveLibraryPlaces,
+    isInsideCity,
+    isInsideLocationTag,
+} from "./places";
 import type {
     City,
     LabelledFileType,
     LabelledSearchDateComponents,
+    LibraryPlace,
     LocalizedSearchData,
     SearchCollectionsAndFiles,
     SearchDateComponents,
@@ -76,6 +81,12 @@ export class SearchWorker {
             this.locationTags,
             this.cities,
         );
+    }
+
+    async placesForFiles(files: EnteFile[]): Promise<LibraryPlace[]> {
+        if (!this.cities.length) this.cities = await fetchCities();
+        const tags = await savedLocationTags();
+        return deriveLibraryPlaces(files, this.cities, tags);
     }
 
     filterSearchableFiles(suggestion: SearchSuggestion) {
@@ -476,29 +487,6 @@ const isDateComponentsMatch = (
 
     return match;
 };
-
-const defaultCityRadius = 10;
-const kmsPerDegree = 111.16;
-
-const isInsideLocationTag = (location: Location, locationTag: LocationTag) =>
-    isWithinRadius(location, locationTag.centerPoint, locationTag.radius);
-
-const isInsideCity = (location: Location, city: City) =>
-    isWithinRadius(location, city, defaultCityRadius);
-
-const isWithinRadius = (
-    location: Location,
-    center: Location,
-    radius: number,
-) => {
-    const a = (radius * radiusScaleFactor(center.latitude)) / kmsPerDegree;
-    const b = radius / kmsPerDegree;
-    const x = center.latitude - location.latitude;
-    const y = center.longitude - location.longitude;
-    return (x * x) / (a * a) + (y * y) / (b * b) <= 1;
-};
-
-const radiusScaleFactor = (lat: number) => 1 / Math.cos(lat * (Math.PI / 180));
 
 const sortMatchesIfNeeded = (
     files: EnteFile[],

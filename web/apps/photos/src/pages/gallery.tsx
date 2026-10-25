@@ -1,3 +1,4 @@
+import type { LibraryPlace } from "ente-new/photos/services/search/types";
 // TODO: Audit this file (the code here is mostly fine, but needs revisiting
 // the file it depends on have been audited and their interfaces fixed).
 /* eslint-disable react-hooks/exhaustive-deps */
@@ -324,6 +325,7 @@ const Page: React.FC = () => {
         props: editAlbumDetailsVisibilityProps,
     } = useModalVisibility();
     const [isMapView, setIsMapView] = useState(false);
+    const [selectedPlace, setSelectedPlace] = useState<LibraryPlace>();
     const closeCollectionMap = useCallback(() => setIsMapView(false), []);
 
     const handleShowCollectionMap = useCallback(() => {
@@ -2162,6 +2164,11 @@ const Page: React.FC = () => {
     const collectionMap = activeCollectionSummary && (
         <CollectionMap
             collectionSummary={activeCollectionSummary}
+            selectedPlace={
+                activeCollectionID === PseudoCollectionID.all
+                    ? selectedPlace
+                    : undefined
+            }
             files={activeCollection ? activeCollectionFiles : filteredFiles}
             mapFileSource={mapFileSource}
             onRemotePull={remotePull}
@@ -2224,6 +2231,9 @@ const Page: React.FC = () => {
                     isSettingsOpen={sidebarVisibilityProps.open}
                     mode={barMode}
                     isMapView={isMapView}
+                    placesFiles={filteredFiles}
+                    selectedPlace={selectedPlace}
+                    onSelectPlace={setSelectedPlace}
                     isMapSelected={
                         isMapView &&
                         activeCollectionID === PseudoCollectionID.all
@@ -2236,6 +2246,7 @@ const Page: React.FC = () => {
                     onSidebar={showSidebar}
                     onUpload={openUploader}
                     onShowMap={() => {
+                        setSelectedPlace(undefined);
                         handleShowCollectionSummaryWithID(
                             PseudoCollectionID.all,
                         );

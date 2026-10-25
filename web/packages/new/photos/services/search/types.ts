@@ -107,3 +107,12 @@ export interface SearchDateComponents {
 }
 
 export type City = Location & { name: string };
+
+/** A city or saved place containing photos in the current map scope. */
+export interface LibraryPlace {
+    id: string;
+    name: string;
+    center: Location;
+    fileCount: number;
+    coverFile: EnteFile;
+}
