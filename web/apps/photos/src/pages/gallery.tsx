@@ -51,15 +51,15 @@ import {
     type GalleryBarMode,
 } from "@/components/gallery/reducer";
 import { useAlbumNavigationData } from "@/components/gallery/use-album-navigation-data";
+import { usePhotosStartup } from "@/components/gallery/use-photos-startup";
+import { usePhotosSync } from "@/components/gallery/use-photos-sync";
 import { Sidebar } from "@/components/sidebar/Sidebar";
 import {
     notifyOthersFilesDialogAttributes,
     notifyUnsupportedSharedFavoritesDialogAttributes,
     trashFilesDialogAttributes,
 } from "@/components/utils/dialog-attributes";
-import { shouldShowWhatsNew } from "@/services/changelog";
 import exportService from "@/services/export";
-import { processPendingAlbumJoin } from "@/services/join-album";
 import {
     albumFilters,
     visibleAlbumFilters,
@@ -71,13 +71,7 @@ import { visibleQuickLinks } from "@/utils/quick-links";
 import { CheckmarkCircle02Icon } from "@hugeicons/core-free-icons";
 import { Typography } from "@mui/material";
 import { sessionExpiredDialogAttributes } from "ente-accounts/components/utils/dialog";
-import {
-    getAndClearIsFirstLogin,
-    savedJustSignedUp,
-} from "ente-accounts/services/accounts-db";
-import { stashRedirect } from "ente-accounts/services/redirect";
 import { isSessionInvalid } from "ente-accounts/services/session";
-import { ensureLocalUser } from "ente-accounts/services/user";
 import { isDesktop } from "ente-base/app";
 import type { MiniDialogAttributes } from "ente-base/components/MiniDialog";
 import { Notification } from "ente-base/components/Notification";
@@ -86,18 +80,13 @@ import { TranslucentLoadingOverlay } from "ente-base/components/loaders";
 import { errorDialogAttributes } from "ente-base/components/utils/dialog";
 import { useModalVisibility } from "ente-base/components/utils/modal";
 import { useBaseContext } from "ente-base/context";
-import { subscribeMainWindowFocus } from "ente-base/electron";
-import { isNamedError } from "ente-base/error";
 import { isHTTPErrorWithStatus } from "ente-base/http";
-import { hasPendingAlbumToJoin } from "ente-base/join-album";
 import log from "ente-base/log";
 import {
     clearSessionStorage,
     haveMasterKeyInSession,
 } from "ente-base/session-storage";
-import { savedAuthToken } from "ente-base/token";
 import type { Location } from "ente-base/types";
-import { initContacts, pullContacts } from "ente-contacts";
 import { DownloadStatusNotifications } from "ente-gallery/components/DownloadStatusNotifications";
 import { FullScreenDropZone } from "ente-gallery/components/FullScreenDropZone";
 import type { UploadTypeSelectorIntent } from "ente-gallery/components/Upload";
@@ -145,12 +134,9 @@ import {
     addManualFileAssignmentsToPerson,
     isMLEnabled,
 } from "ente-new/photos/services/ml";
-import { contactsGetDiff, contactsGetProfilePicture } from "ente-photos-wasm";
 
-import { ensureAuthenticatedSession } from "@/services/authenticated-session";
 import { postPullFiles, prePullFiles, pullFiles } from "@/services/pull";
 import { uploadManager } from "@/services/upload-manager";
-import watcher from "@/services/watch";
 import {
     selectedFavoriteCount as countSelectedFavorites,
     getSelectedFiles,
@@ -163,11 +149,6 @@ import {
     resolveQuickLinkURL,
 } from "ente-gallery/utils/quick-link";
 import {
-    savedCollectionFiles,
-    savedCollections,
-    savedTrashItems,
-} from "ente-new/photos/services/photos-fdb";
-import {
     filterSearchableFiles,
     updateSearchCollectionsAndFiles,
 } from "ente-new/photos/services/search";
@@ -175,13 +156,9 @@ import type {
     SearchOption,
     SidebarActionID,
 } from "ente-new/photos/services/search/types";
-import {
-    initSettings,
-    updateMapEnabled,
-} from "ente-new/photos/services/settings";
+import { updateMapEnabled } from "ente-new/photos/services/settings";
 import {
     redirectToCustomerPortal,
-    savedUserDetailsOrTriggerPull,
     verifyStripeSubscription,
 } from "ente-new/photos/services/user-details";
 import { usePhotosAppContext } from "ente-new/photos/types/context";
@@ -207,7 +184,6 @@ const Page: React.FC = () => {
         "large-files" | "duplicates"
     >();
     const isCleanupViewOpen = cleanupView !== undefined;
-    const [isFirstLoad, setIsFirstLoad] = useState(false);
     const [isContextMenuOpen, setIsContextMenuOpen] = useState(false);
     const [suppressContextSelectionBar, setSuppressContextSelectionBar] =
         useState(false);
@@ -675,115 +651,6 @@ const Page: React.FC = () => {
     const router = useRouter();
 
     useEffect(() => {
-        const electron = globalThis.electron;
-        let syncIntervalID: ReturnType<typeof setInterval> | undefined;
-        let unsubscribeMainWindowFocus: (() => void) | undefined;
-
-        void (async () => {
-            const authToken = await savedAuthToken();
-            if (!haveMasterKeyInSession() || !authToken) {
-                stashRedirect("/gallery");
-                void router.push("/");
-                return;
-            }
-
-            if (savedJustSignedUp()) {
-                void router.replace("/plan");
-                return;
-            }
-
-            try {
-                await ensureAuthenticatedSession();
-            } catch (e) {
-                if (isNamedError(e, "missing_recovery_key")) {
-                    showMiniDialog(sessionExpiredDialogAttributes(logout));
-                } else {
-                    onGenericError(e);
-                }
-                return;
-            }
-
-            initSettings();
-            setupSelectAllKeyBoardShortcutHandler();
-
-            dispatch({ type: "showAll" });
-
-            setIsFirstLoad(getAndClearIsFirstLogin());
-
-            const user = ensureLocalUser();
-            void initContacts(
-                user.id,
-                ensureAuthenticatedSession,
-                contactsGetDiff,
-                contactsGetProfilePicture,
-            )
-                .then(pullContacts)
-                .catch((error: unknown) => {
-                    log.warn(
-                        "[gallery] Failed to warm contacts display cache",
-                        error,
-                    );
-                });
-            const userDetails = await savedUserDetailsOrTriggerPull();
-            dispatch({
-                type: "mount",
-                user,
-                familyData: userDetails?.familyData,
-                collections: await savedCollections(),
-                collectionFiles: await savedCollectionFiles(),
-                trashItems: await savedTrashItems(),
-            });
-
-            // Join first so the initial pull includes the new album.
-            let joinedAlbumId: number | null = null;
-
-            if (hasPendingAlbumToJoin()) {
-                try {
-                    const joinedCollectionId = await processPendingAlbumJoin();
-                    if (joinedCollectionId) {
-                        joinedAlbumId = joinedCollectionId;
-                    }
-                } catch (error) {
-                    log.error("Failed to join album", error);
-                    showMiniDialog({
-                        title: t("error"),
-                        message: t("album_join_failed"),
-                    });
-                }
-            }
-
-            await remotePull({ source: "gallery-mount" });
-
-            if (joinedAlbumId) {
-                dispatch({
-                    type: "showCollectionSummary",
-                    collectionSummaryID: joinedAlbumId,
-                });
-            }
-
-            setIsFirstLoad(false);
-
-            syncIntervalID = setInterval(
-                () => remotePull({ silent: true, source: "gallery-periodic" }),
-                5 * 60 * 1000,
-            );
-
-            if (electron) {
-                unsubscribeMainWindowFocus = subscribeMainWindowFocus(() => {
-                    void remotePull({ silent: true, source: "desktop-focus" });
-                    void watcher.checkAccessibility();
-                });
-                if (await shouldShowWhatsNew(electron)) showWhatsNew();
-            }
-        })();
-
-        return () => {
-            clearInterval(syncIntervalID);
-            unsubscribeMainWindowFocus?.();
-        };
-    }, []);
-
-    useEffect(() => {
         if (state.user && userDetails) {
             dispatch({ type: "setUserDetails", userDetails });
         }
@@ -1062,7 +929,16 @@ const Page: React.FC = () => {
         ],
     );
 
-    const setupSelectAllKeyBoardShortcutHandler = () => {
+    const { isFirstLoad, isStartupComplete } = usePhotosStartup({
+        dispatch,
+        remotePull,
+        showWhatsNew,
+    });
+    usePhotosSync({ enabled: isStartupComplete, remotePull });
+
+    const hasUser = !!user;
+    useEffect(() => {
+        if (!hasUser) return;
         const handleKeyUp = (e: KeyboardEvent) => {
             if (keyboardShortcutHandlerRef.current.isCleanupViewOpen) return;
             switch (e.key) {
@@ -1080,7 +956,7 @@ const Page: React.FC = () => {
         return () => {
             document.removeEventListener("keydown", handleKeyUp);
         };
-    };
+    }, [hasUser]);
 
     const handleRemoveFilesFromCollection = (collection: Collection) => {
         void (async () => {
