@@ -31,6 +31,7 @@ import { nullToUndefined } from "ente-utils/transform";
 import { z } from "zod";
 import { clearInflightPasskeySessionID } from "./passkey";
 import { recoveryKeyFromMnemonic } from "./recovery-key";
+import { twoFactorRecoveryProof } from "./recovery-proof";
 
 export interface LocalUser {
     id: number;
@@ -446,7 +447,7 @@ export const recoverTwoFactorFinish = async (
     const { id, keyAttributes, encryptedToken } = await removeTwoFactor(
         twoFactorType,
         sessionID,
-        twoFactorSecret,
+        await twoFactorRecoveryProof(twoFactorSecret, twoFactorType, sessionID),
     );
     await resetSavedLocalUserTokens(id, encryptedToken);
     updateSavedLocalUser({
@@ -461,12 +462,13 @@ export const recoverTwoFactorFinish = async (
 const removeTwoFactor = async (
     twoFactorType: TwoFactorType,
     sessionID: string,
-    secret: string,
+    proof: string,
 ): Promise<TwoFactorAuthorizationResponse> => {
     const res = await fetch(await apiURL("/users/two-factor/remove"), {
         method: "POST",
         headers: publicRequestHeaders(),
-        body: JSON.stringify({ twoFactorType, sessionID, secret }),
+        // Never fall back to sending the decrypted secret to older servers.
+        body: JSON.stringify({ twoFactorType, sessionID, proof }),
     });
     ensureOk(res);
     return TwoFactorAuthorizationResponse.parse(await res.json());
