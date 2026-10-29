@@ -3,6 +3,7 @@
         "allowJs": true,
         "checkJs": true,
         "noEmit": true,
+        "allowImportingTsExtensions": true,
         "module": "nodenext",
         "target": "ES2024",
         "types": ["node"],

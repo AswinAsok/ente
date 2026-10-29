@@ -208,10 +208,17 @@ jobs:
                       "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
                       "HEAD:refs/heads/release/${APP}-v${VERSION}"
 
+            - name: Setup node for AppImage verification
+              if: inputs.action == 'promote' && inputs.app == 'photos-desktop'
+              uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+              with:
+                  node-version: 24
+
             - name: Promote release
               if: inputs.action == 'promote'
               env:
                   GH_TOKEN: ${{ steps.app_token.outputs.token }}
+                  PHOTOS_APPIMAGE_UPDATE_PUBLIC_KEY: ${{ vars.PHOTOS_APPIMAGE_UPDATE_PUBLIC_KEY }}
               run: |
                   set -euo pipefail
 
@@ -242,6 +249,11 @@ jobs:
                           echo "::error::photos-desktop-v${VERSION}-rc does not point at ${release_branch}"
                           exit 1
                       fi
+
+                      verify_dir="$(mktemp -d "${RUNNER_TEMP}/photos-appimage-verify.XXXXXX")"
+                      gh release download "v${VERSION}" --repo ente/photos-desktop \
+                          --pattern 'appimage-update-*.json' --pattern 'ente-*.AppImage' --dir "${verify_dir}"
+                      node desktop/scripts/appimage-updates.mjs verify "${verify_dir}" "${VERSION}"
 
                       git tag "photos-desktop-v${VERSION}" "${release_sha}"
                       git_push_with_app_token "refs/tags/photos-desktop-v${VERSION}"

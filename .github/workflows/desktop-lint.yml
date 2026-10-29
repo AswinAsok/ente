@@ -25,6 +25,8 @@ jobs:
 
             - run: npm ci
 
+            - run: npm run test:appimage-updates
+
             - run: npm run postinstall
 
             # Restore-only; primed on main by warm-caches.yml.

@@ -22,6 +22,8 @@ export default ts.config(
             "scripts/*.js",
             "scripts/*.mjs",
             "scripts/*.ts",
+            "tests/*.mjs",
+            ".appimage-tests/",
             "app/",
             "out/",
             "dist/",

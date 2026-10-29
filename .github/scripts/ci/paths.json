@@ -48,6 +48,8 @@
     "desktop-lint": [
         ".github/actions/restore-rust-target/**",
         ".github/workflows/desktop-lint.yml",
+        ".github/workflows/photos-desktop-build.yml",
+        ".github/workflows/app-release.yml",
         "desktop/**",
         "rust/.cargo/config.toml",
         "rust/Cargo.lock",

@@ -9,5 +9,7 @@ build/vips*
 build/ffmpeg/
 build/onnxruntime/
 build/napi/
+build/appimage-update-public-key.pem
+.appimage-tests/
 
 rust-bindings/

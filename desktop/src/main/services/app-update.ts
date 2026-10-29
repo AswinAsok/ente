@@ -1,12 +1,33 @@
 import { compareVersions } from "compare-versions";
 import { default as electronLog } from "electron-log";
-import { autoUpdater } from "electron-updater";
-import { app, BrowserWindow } from "electron/main";
+import { autoUpdater as platformAutoUpdater } from "electron-updater";
+import { app, BrowserWindow, dialog } from "electron/main";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { allowWindowClose } from "../../main";
 import { AppUpdate } from "../../types/ipc";
 import log from "../log";
 import { userPreferences } from "../stores/user-preferences";
 import { isDev } from "../utils/electron";
+import { SignedAppImageUpdater } from "./app-update-appimage";
+import { appImagePublicKeyFile } from "./app-update-signature";
+
+const isSignedAppImage =
+    !isDev && process.platform === "linux" && !!process.env.APPIMAGE;
+const autoUpdater = isSignedAppImage
+    ? new SignedAppImageUpdater({
+          arch: process.arch,
+          publicKey: () =>
+              readFileSync(
+                  path.join(process.resourcesPath, appImagePublicKeyFile),
+                  "utf8",
+              ),
+          highestVersion: () =>
+              userPreferences.get("highestAppImageUpdateVersion"),
+          rememberVersion: (version) =>
+              userPreferences.set("highestAppImageUpdateVersion", version),
+      })
+    : platformAutoUpdater;
 
 export const setupAutoUpdater = (mainWindow: BrowserWindow) => {
     autoUpdater.logger = electronLog;
@@ -35,6 +56,23 @@ interface CheckForUpdatesAndNotifyOpts {
 }
 
 const checkForUpdatesAndNotify = async (
+    mainWindow: BrowserWindow,
+    opts?: CheckForUpdatesAndNotifyOpts,
+) => {
+    try {
+        await checkForUpdates(mainWindow, opts);
+    } catch (error) {
+        log.error("Auto update failed", error);
+        if (isSignedAppImage && opts?.notifyImmediately)
+            await dialog.showMessageBox(mainWindow, {
+                type: "warning",
+                message: "Unable to verify the update",
+                detail: "Ente could not securely check or download this update. Please try again later.",
+            });
+    }
+};
+
+const checkForUpdates = async (
     mainWindow: BrowserWindow,
     opts?: CheckForUpdatesAndNotifyOpts,
 ) => {
@@ -83,7 +121,8 @@ const checkForUpdatesAndNotify = async (
     autoUpdater.on("error", (error) => {
         clearTimeout(timeout);
         log.error("Auto update failed", error);
-        showUpdateDialog({ autoUpdatable: false, version });
+        if (!isSignedAppImage)
+            showUpdateDialog({ autoUpdatable: false, version });
     });
 
     log.info(`Downloading update ${version}`);

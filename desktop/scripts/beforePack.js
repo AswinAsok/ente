@@ -3,6 +3,16 @@ const { ensureFFmpeg } = require("./ffmpeg");
 const { ensureVips } = require("./vips");
 
 module.exports = async (context) => {
+    if (
+        context.electronPlatformName === "linux" &&
+        context.targets.some(
+            (target) => target.name.toLowerCase() === "appimage",
+        )
+    ) {
+        const { prepareAppImageUpdateKey } =
+            await import("./appimage-updates.mjs");
+        prepareAppImageUpdateKey(context.packager.projectDir);
+    }
     await ensureVips(
         context.electronPlatformName,
         Arch[context.arch],

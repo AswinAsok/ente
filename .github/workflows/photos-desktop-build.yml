@@ -147,10 +147,10 @@ jobs:
 
                   platform=${{ startsWith(matrix.os, 'macos') && 'mac' || startsWith(matrix.os, 'windows') && 'windows' || 'linux' }}
 
-                  if [ "${IS_RC}" = "true" ]; then
+                  if [ "${IS_RC}" = "true" ] && [ "${RUNNER_OS}" != "Linux" ]; then
                       npm exec -- electron-builder --$platform --publish always "-c.releaseInfo.releaseNotes=${RELEASE_BODY}"
                   else
-                      npm exec -- electron-builder --$platform --publish never
+                      npm exec -- electron-builder --$platform --publish never "-c.releaseInfo.releaseNotes=${RELEASE_BODY}"
                   fi
               env:
                   GH_TOKEN: ${{ steps.nightly_token.outputs.token }}
@@ -162,8 +162,23 @@ jobs:
                   AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
                   AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
                   AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+                  PHOTOS_APPIMAGE_UPDATE_PUBLIC_KEY: ${{ vars.PHOTOS_APPIMAGE_UPDATE_PUBLIC_KEY }}
                   # Allow rebuilds to keep updating the rolling RC draft.
                   EP_GH_IGNORE_TIME: true
+
+            - name: Stage Linux release assets for signing
+              if: runner.os == 'Linux' && env.IS_RC == 'true'
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+              with:
+                  name: photos-linux-release
+                  if-no-files-found: error
+                  path: |
+                      desktop/dist/*.AppImage
+                      desktop/dist/latest-linux*.yml
+                      desktop/dist/*.deb
+                      desktop/dist/*.rpm
+                      desktop/dist/*.pacman
+                      desktop/dist/*.blockmap
 
             - name: Upload to nightly
               uses: ncipollo/release-action@339a81892b84b4eeb0f6e744e4574d79d0d9b8dd # v1.21.0
@@ -179,9 +194,100 @@ jobs:
                   allowUpdates: true
                   updateOnlyUnreleased: true
 
-    finish-build:
+    sign-linux:
         needs: [build-metadata, build]
-        if: needs.build-metadata.outputs.should_build == 'true'
+        if: startsWith(github.ref_name, 'release/photos-desktop-v')
+        runs-on: ubuntu-latest
+        environment:
+            name: photos-appimage-signing
+        steps:
+            - name: Checkout signer
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  ref: ${{ needs.build-metadata.outputs.commit_sha }}
+                  persist-credentials: false
+
+            - name: Setup node
+              uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+              with:
+                  node-version: 24
+
+            - name: Download Linux release assets
+              uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+              with:
+                  name: photos-linux-release
+                  path: linux-release
+
+            - name: Sign AppImage manifests
+              env:
+                  PHOTOS_APPIMAGE_SIGNING_KEY: ${{ secrets.PHOTOS_APPIMAGE_SIGNING_KEY }}
+                  PHOTOS_APPIMAGE_UPDATE_PUBLIC_KEY: ${{ vars.PHOTOS_APPIMAGE_UPDATE_PUBLIC_KEY }}
+                  RELEASE_VERSION: ${{ needs.build-metadata.outputs.release_version }}
+              run: node desktop/scripts/appimage-updates.mjs sign linux-release "${RELEASE_VERSION}"
+
+            - name: Stage signed Linux assets
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+              with:
+                  name: photos-linux-signed-release
+                  path: linux-release/*
+                  if-no-files-found: error
+
+    publish-linux:
+        needs: [build-metadata, sign-linux]
+        runs-on: ubuntu-latest
+        environment:
+            name: production
+        steps:
+            - name: Checkout verifier
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  ref: ${{ needs.build-metadata.outputs.commit_sha }}
+
+            - name: Setup node
+              uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+              with:
+                  node-version: 24
+
+            - name: Download signed Linux assets
+              uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+              with:
+                  name: photos-linux-signed-release
+                  path: linux-release
+
+            - name: Verify signed Linux assets
+              env:
+                  PHOTOS_APPIMAGE_UPDATE_PUBLIC_KEY: ${{ vars.PHOTOS_APPIMAGE_UPDATE_PUBLIC_KEY }}
+                  RELEASE_VERSION: ${{ needs.build-metadata.outputs.release_version }}
+              run: node desktop/scripts/appimage-updates.mjs verify linux-release "${RELEASE_VERSION}"
+
+            - name: Mint release upload token
+              id: upload_token
+              uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+              with:
+                  client-id: ${{ secrets.ENTE_CI_GH_CLIENT_ID }}
+                  private-key: ${{ secrets.ENTE_CI_GH_APP_PRIVATE_KEY }}
+                  repositories: photos-desktop
+                  permission-contents: write
+
+            - name: Upload signed Linux assets to draft
+              env:
+                  GH_TOKEN: ${{ steps.upload_token.outputs.token }}
+                  RELEASE_VERSION: ${{ needs.build-metadata.outputs.release_version }}
+              run: |
+                  set -euo pipefail
+                  draft="$(gh release view "v${RELEASE_VERSION}" --repo ente/photos-desktop --json isDraft --jq .isDraft)"
+                  if [ "${draft}" != "true" ]; then
+                      echo "::error::Refusing to replace assets of a published release"
+                      exit 1
+                  fi
+                  gh release upload "v${RELEASE_VERSION}" --repo ente/photos-desktop --clobber linux-release/*
+
+    finish-build:
+        needs: [build-metadata, build, publish-linux]
+        if: >-
+            always() && needs.build-metadata.outputs.should_build == 'true' &&
+            needs.build.result == 'success' &&
+            (!startsWith(github.ref_name, 'release/photos-desktop-v') || needs.publish-linux.result == 'success')
         runs-on: ubuntu-latest
         permissions:
             contents: write

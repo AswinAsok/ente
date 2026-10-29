@@ -6,7 +6,10 @@ files:
 extraFiles:
     - from: build
       to: resources
-      filter: ["**/*", "!ffmpeg/{ffprobe,ffprobe.exe,.archive-sha256}"]
+      filter:
+          - "**/*"
+          - "!ffmpeg/{ffprobe,ffprobe.exe,.archive-sha256}"
+          - "!appimage-update-public-key.pem"
 beforeBuild: scripts/beforeBuild.js
 beforePack: scripts/beforePack.js
 protocols:
@@ -25,6 +28,9 @@ win:
 nsis:
     deleteAppDataOnUninstall: true
 linux:
+    extraResources:
+        - from: build/appimage-update-public-key.pem
+          to: appimage-update-public-key.pem
     target:
         - target: AppImage
           arch: [x64, arm64]

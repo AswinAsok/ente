@@ -49,3 +49,8 @@ It also opens a PR for updating the changelog in the docs.
 The build runs on Windows, Linux and macOS, producing the artifacts configured in [electron-builder.yml](../electron-builder.yml): an NSIS installer (Windows), an AppImage and `.rpm`/`.deb`/`.pacman` packages (Linux), and a universal DMG (macOS). The macOS DMG is notarized and signed; Windows is signed via Azure Trusted Signing.
 
 The Windows `exe`, the Linux AppImage, and the macOS DMG check `ente/photos-desktop`'s latest release for auto updates; the other formats don't auto update yet.
+
+AppImage updates require the [signed update configuration](appimage-updates.md).
+Linux packaging embeds the configured public key, and RC signing runs in the
+separate `photos-appimage-signing` environment. Promotion verifies both Linux
+architectures before making the release latest.

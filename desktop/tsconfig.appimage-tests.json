@@ -1,0 +1,8 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": { "outDir": ".appimage-tests" },
+    "include": [
+        "src/main/services/app-update-appimage.ts",
+        "src/main/services/app-update-signature.ts"
+    ]
+}
