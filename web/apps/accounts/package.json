@@ -2,11 +2,15 @@
     "name": "accounts",
     "version": "0.0.0",
     "private": true,
+    "scripts": {
+        "test": "vitest --run"
+    },
     "dependencies": {
         "ente-accounts": "*",
         "ente-base": "*"
     },
     "devDependencies": {
-        "ente-build-config": "*"
+        "ente-build-config": "*",
+        "vitest": "5.0.4"
     }
 }

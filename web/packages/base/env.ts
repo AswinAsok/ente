@@ -4,6 +4,7 @@ declare const process: {
         readonly NODE_ENV: "development" | "production" | "test";
         readonly NEXT_PUBLIC_ENSU_DESKTOP_VERSION?: string;
         readonly NEXT_PUBLIC_ENTE_ENDPOINT?: string;
+        readonly NEXT_PUBLIC_ENTE_ACCOUNTS_REDIRECT_ORIGINS?: string;
         readonly appName: string;
         readonly desktopAppVersion?: string;
         readonly gitSHA?: string;
@@ -15,6 +16,8 @@ export const isDevBuild = process.env.NODE_ENV == "development";
 export const buildEnvIsProductionBuild = process.env.NODE_ENV == "production";
 
 export const buildEnvCustomAPIEndpoint = process.env.NEXT_PUBLIC_ENTE_ENDPOINT;
+export const buildEnvAccountsRedirectOrigins =
+    process.env.NEXT_PUBLIC_ENTE_ACCOUNTS_REDIRECT_ORIGINS;
 export const buildEnvEnsuDesktopVersion =
     process.env.NEXT_PUBLIC_ENSU_DESKTOP_VERSION;
 export const buildEnvAppName = process.env.appName;

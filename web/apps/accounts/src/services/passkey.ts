@@ -4,7 +4,7 @@ import {
     fromB64URLSafeNoPadding,
     toB64URLSafeNoPadding,
 } from "ente-base/crypto";
-import { isDevBuild } from "ente-base/env";
+import { buildEnvAccountsRedirectOrigins, isDevBuild } from "ente-base/env";
 import {
     ensureOk,
     HTTPError,
@@ -14,6 +14,7 @@ import {
 import { apiURL } from "ente-base/origins";
 import { nullToUndefined } from "ente-utils/transform";
 import { z } from "zod";
+import { isAllowedPasskeyRedirect } from "./passkey-redirect";
 
 export const isWebAuthnSupported = () => !!navigator.credentials;
 
@@ -171,60 +172,20 @@ const authenticatorAttestationResponse = (credential: Credential) => {
     return attestationResponse;
 };
 
-const isAllowedRedirectScheme = (url: URL) =>
-    url.protocol === "http:" ||
-    url.protocol === "https:" ||
-    url.protocol === "ente:" ||
-    url.protocol === "enteauth:" ||
-    url.protocol === "entelocker:" ||
-    url.protocol === "ensu:" ||
-    url.protocol === "ente-cli:" ||
-    // Tauri's internal protocol (used by EnsU desktop) is not an OS-level
-    // deeplink scheme, but we may still get redirects to it when the accounts
-    // flow runs inside the app's WebView.
-    (url.protocol === "tauri:" && url.hostname === "localhost");
-
-// Ente-hosted and local builds restrict redirect hosts.
-// Self-hosted Accounts must accept its own hosts.
-const isWhitelistedRedirect = (redirectURL: URL) => {
-    if (!isAllowedRedirectScheme(redirectURL)) return false;
-    if (!shouldRestrictToWhitelistedRedirect()) return true;
-    return (
-        redirectURL.protocol === "ente:" ||
-        redirectURL.protocol === "enteauth:" ||
-        redirectURL.protocol === "entelocker:" ||
-        redirectURL.protocol === "ensu:" ||
-        redirectURL.protocol === "ente-cli:" ||
-        (redirectURL.protocol === "tauri:" &&
-            redirectURL.hostname === "localhost") ||
-        _isWhitelistedRedirect(redirectURL)
-    );
-};
-
-const shouldRestrictToWhitelistedRedirect = () => {
-    const hostname = new URL(window.location.origin).hostname;
-    return (
-        hostname.endsWith("localhost") ||
-        hostname.endsWith(".ente.com") ||
-        hostname.endsWith(".ente.io") ||
-        hostname.endsWith(".ente.sh")
-    );
-};
-
-const _isWhitelistedRedirect = (redirectURL: URL) =>
-    (isDevBuild && redirectURL.hostname.endsWith("localhost")) ||
-    redirectURL.host === "ente.space" ||
-    redirectURL.host.endsWith(".ente.com") ||
-    redirectURL.host.endsWith(".ente.io") ||
-    redirectURL.host.endsWith(".ente.sh");
-
 export const parseRedirectURLParam = (
     value: string | undefined,
 ): URL | undefined => {
     if (!value) return undefined;
     try {
         const url = new URL(value);
-        return isWhitelistedRedirect(url) ? url : undefined;
+        return isAllowedPasskeyRedirect(
+            url,
+            window.location.origin,
+            isDevBuild,
+            buildEnvAccountsRedirectOrigins,
+        )
+            ? url
+            : undefined;
     } catch {
         return undefined;
     }

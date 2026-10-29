@@ -9,20 +9,25 @@ The environment variables needed for running Ente and the default configuration 
 
 ## Environment Variables
 
-A self-hosted Ente web app only needs the Museum API endpoint. Web app origins are configured in `museum.yaml` under `apps`.
+A self-hosted Ente web app needs the Museum API endpoint. Web app origins are configured in `museum.yaml` under `apps`. Self-hosted Accounts also needs an explicit list of trusted web callback origins for passkey login and recovery.
 
 This document outlines the essential environment variables and port mappings of the web apps.
 
 Here's the list of environment variables that is used by the cluster:
 
-| Service    | Environment Variable  | Description                                                                  | Default Value                   |
-| ---------- | --------------------- | ---------------------------------------------------------------------------- | ------------------------------- |
-| `web`      | `ENTE_API_ORIGIN`     | Alias for `NEXT_PUBLIC_ENTE_ENDPOINT`. API Endpoint for Ente's API (Museum). | http://localhost:8080           |
-| `postgres` | `POSTGRES_USER`       | Username for PostgreSQL database                                             | `pguser`                        |
-| `postgres` | `POSTGRES_DB`         | Name of database for use with Ente                                           | `ente_db`                       |
-| `postgres` | `POSTGRES_PASSWORD`   | Password for PostgreSQL database's user                                      | Randomly generated (quickstart) |
-| `minio`    | `MINIO_ROOT_USER`     | Username for MinIO                                                           | Randomly generated (quickstart) |
-| `minio`    | `MINIO_ROOT_PASSWORD` | Password for MinIO                                                           | Randomly generated (quickstart) |
+| Service    | Environment Variable             | Description                                                                                                                                                | Default Value                   |
+| ---------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| `web`      | `ENTE_API_ORIGIN`                | Alias for `NEXT_PUBLIC_ENTE_ENDPOINT`. API Endpoint for Ente's API (Museum).                                                                               | http://localhost:8080           |
+| `web`      | `ENTE_ACCOUNTS_REDIRECT_ORIGINS` | Comma-separated web origins allowed to receive passkey callbacks from self-hosted Accounts. Docker alias for `NEXT_PUBLIC_ENTE_ACCOUNTS_REDIRECT_ORIGINS`. | Empty                           |
+| `postgres` | `POSTGRES_USER`                  | Username for PostgreSQL database                                                                                                                           | `pguser`                        |
+| `postgres` | `POSTGRES_DB`                    | Name of database for use with Ente                                                                                                                         | `ente_db`                       |
+| `postgres` | `POSTGRES_PASSWORD`              | Password for PostgreSQL database's user                                                                                                                    | Randomly generated (quickstart) |
+| `minio`    | `MINIO_ROOT_USER`                | Username for MinIO                                                                                                                                         | Randomly generated (quickstart) |
+| `minio`    | `MINIO_ROOT_PASSWORD`            | Password for MinIO                                                                                                                                         | Randomly generated (quickstart) |
+
+For example, set `ENTE_ACCOUNTS_REDIRECT_ORIGINS=https://photos.example.org,https://auth.example.org,https://locker.example.org` on the web container. Each entry must be an origin, including the scheme and any non-default port, without a path, query, credentials, or fragment. Subdomains are not included automatically.
+
+For source builds, set `NEXT_PUBLIC_ENTE_ACCOUNTS_REDIRECT_ORIGINS` when building Accounts. Recreate the web container or rebuild the app after changing the configuration. When no origins are configured, self-hosted Accounts only accepts web callbacks to its own origin. Native app callbacks continue to work, and Ente-hosted Accounts retains its built-in allowlist.
 
 ## Default Configuration
 
