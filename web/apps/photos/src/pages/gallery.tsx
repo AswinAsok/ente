@@ -1,3 +1,4 @@
+import type { FeedItem } from "@/services/feed";
 // TODO: Audit this file (the code here is mostly fine, but needs revisiting
 // the file it depends on have been audited and their interfaces fixed).
 /* eslint-disable react-hooks/exhaustive-deps */
@@ -479,6 +480,57 @@ const Page: React.FC = () => {
             tempHiddenFileIDs,
         ],
     );
+    const feedCollections = useMemo(
+        () =>
+            state.collections.filter(
+                (collection) => !state.hiddenCollectionIDs.has(collection.id),
+            ),
+        [state.collections, state.hiddenCollectionIDs],
+    );
+    const feedFiles = useMemo(
+        () =>
+            state.collectionFiles.filter(
+                (file) =>
+                    !state.hiddenCollectionIDs.has(file.collectionID) &&
+                    !hiddenFileIDs.has(file.id) &&
+                    !tempDeletedFileIDs.has(file.id) &&
+                    !tempHiddenFileIDs.has(file.id) &&
+                    (file.magicMetadata?.data.visibility === undefined ||
+                        file.magicMetadata.data.visibility ===
+                            ItemVisibility.visible),
+            ),
+        [
+            state.collectionFiles,
+            state.hiddenCollectionIDs,
+            hiddenFileIDs,
+            tempDeletedFileIDs,
+            tempHiddenFileIDs,
+        ],
+    );
+    const [pendingFeedItem, setPendingFeedItem] = useState<FeedItem>();
+    useEffect(() => {
+        if (
+            !pendingFeedItem ||
+            activeCollectionID != pendingFeedItem.collectionID ||
+            !pendingFeedItem.file
+        )
+            return;
+        const fileIndex = filteredFiles.findIndex(
+            ({ id }) => id == pendingFeedItem.file!.id,
+        );
+        if (fileIndex < 0) return;
+        setPendingFileNavigation({
+            fileIndex,
+            sidebar:
+                pendingFeedItem.type == "like"
+                    ? "likes"
+                    : pendingFeedItem.commentID
+                      ? "comments"
+                      : undefined,
+            commentID: pendingFeedItem.commentID,
+        });
+        setPendingFeedItem(undefined);
+    }, [pendingFeedItem, activeCollectionID, filteredFiles]);
     const activePerson =
         state.view?.type == "people" ? state.view.activePerson : undefined;
     const people =
@@ -2177,6 +2229,20 @@ const Page: React.FC = () => {
                 />
                 <PhotosNavigationShell
                     ref={navigationRef}
+                    feed={{
+                        collections: feedCollections,
+                        files: feedFiles,
+                        userID: user.id,
+                        onOpenItem: (item) => {
+                            setIsMapView(false);
+                            handleShowCollectionSummaryWithID(
+                                item.collectionID,
+                            );
+                            setPendingFeedItem(
+                                item.type == "album" ? undefined : item,
+                            );
+                        },
+                    }}
                     isFirstLoad={isFirstLoad}
                     isInSearchMode={isInSearchMode}
                     collectionNameByID={collectionNameByID}

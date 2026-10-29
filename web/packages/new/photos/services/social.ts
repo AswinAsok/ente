@@ -47,6 +47,93 @@ export const getUnifiedSocialDiff = async (
     return decryptSocialDiff(collectionKey, await res.json());
 };
 
+/** Avoid requesting empty social diffs for every private album. */
+export const getSocialActivityCollectionIDs = async (): Promise<
+    Set<number>
+> => {
+    const res = await fetch(await apiURL("/comments-reactions/updated-at"), {
+        headers: await authenticatedRequestHeaders(),
+        signal: AbortSignal.timeout(30_000),
+    });
+    ensureOk(res);
+    const { updates } = z
+        .object({
+            updates: z
+                .array(
+                    z.object({
+                        collectionID: z.number(),
+                        commentsUpdatedAt: z.number().nullish(),
+                        reactionsUpdatedAt: z.number().nullish(),
+                    }),
+                )
+                .nullish()
+                .transform((updates) => updates ?? []),
+        })
+        .parse(await res.json());
+    return new Set(
+        updates
+            .filter(
+                (update) =>
+                    update.commentsUpdatedAt || update.reactionsUpdatedAt,
+            )
+            .map((update) => update.collectionID),
+    );
+};
+
+/** Read all collection activity, advancing each diff cursor independently. */
+export const getCollectionSocialActivity = async (
+    collectionID: number,
+    collectionKey: string,
+): Promise<Pick<UnifiedSocialDiff, "comments" | "reactions">> => {
+    const comments = new Map<string, Comment>();
+    const reactions = new Map<string, UnifiedReaction>();
+    let commentsSinceTime = 0;
+    let reactionsSinceTime = 0;
+    while (true) {
+        const res = await fetch(
+            await apiURL("/social/diff", {
+                collectionID,
+                commentsSinceTime,
+                reactionsSinceTime,
+                limit: 1000,
+            }),
+            {
+                headers: await authenticatedRequestHeaders(),
+                signal: AbortSignal.timeout(30_000),
+            },
+        );
+        ensureOk(res);
+        const raw = UnifiedDiffResponse.parse(await res.json());
+        const page = await decryptSocialDiff(collectionKey, raw);
+        for (const comment of page.comments) comments.set(comment.id, comment);
+        for (const reaction of page.reactions)
+            reactions.set(reaction.id, reaction);
+        if (!raw.hasMoreComments && !raw.hasMoreReactions) break;
+        // Use remote timestamps: deleted or undecryptable entries still advance
+        // the cursor even when the decrypted page omits them.
+        const nextComments = Math.max(
+            commentsSinceTime,
+            ...raw.comments.map((c) => c.updatedAt),
+        );
+        const nextReactions = Math.max(
+            reactionsSinceTime,
+            ...raw.reactions.map((r) => r.updatedAt),
+        );
+        if (
+            (raw.hasMoreComments && nextComments <= commentsSinceTime) ||
+            (raw.hasMoreReactions && nextReactions <= reactionsSinceTime)
+        ) {
+            throw new Error("Social activity pagination did not advance");
+        }
+        commentsSinceTime = nextComments;
+        reactionsSinceTime = nextReactions;
+    }
+    return {
+        comments: [...comments.values()],
+        reactions: [...reactions.values()],
+    };
+};
+
 const decryptSocialDiff = async (
     collectionKey: string,
     responseJson: unknown,
