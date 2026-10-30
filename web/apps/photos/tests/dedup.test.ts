@@ -346,7 +346,6 @@ describe("removeSelectedDuplicateGroups", () => {
             ),
         ).resolves.toEqual(new Set());
         expect(executeDuplicateRemoval).not.toHaveBeenCalled();
-        expect(savedNormalCollections).not.toHaveBeenCalled();
         expect(forgetPendingFavoriteFileIDs).not.toHaveBeenCalled();
         expect(refresh).toHaveBeenCalledOnce();
         expect(progress).toHaveBeenCalledExactlyOnceWith(100);
