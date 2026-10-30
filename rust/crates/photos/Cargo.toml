@@ -20,7 +20,9 @@ futures-util.workspace = true
 rusqlite = { workspace = true, default-features = true }
 
 [dev-dependencies]
+mockito.workspace = true
 tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 
 [lints]
 workspace = true

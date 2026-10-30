@@ -5,22 +5,30 @@ import {
     removeSelectedDuplicateGroups,
     type DuplicateGroup,
 } from "../src/services/dedup";
-
 const {
-    addToCollection,
-    moveToTrash,
+    executeDuplicateRemoval,
     savedNormalCollections,
     savedCollectionFiles,
+    forgetPendingFavoriteFileIDs,
+    session,
 } = vi.hoisted(() => ({
-    addToCollection: vi.fn(),
-    moveToTrash: vi.fn(),
+    executeDuplicateRemoval:
+        vi.fn<typeof import("ente-photos-wasm").executeDuplicateRemoval>(),
     savedNormalCollections: vi.fn(),
     savedCollectionFiles: vi.fn(),
+    forgetPendingFavoriteFileIDs: vi.fn(),
+    session: {},
+}));
+vi.mock("ente-photos-wasm", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("ente-photos-wasm")>()),
+    executeDuplicateRemoval,
+}));
+vi.mock("../src/services/authenticated-session", () => ({
+    ensureAuthenticatedSession: () => Promise.resolve(session),
 }));
 vi.mock("ente-new/photos/services/collection", () => ({
-    addToCollection,
-    moveToTrash,
     savedNormalCollections,
+    forgetPendingFavoriteFileIDs,
     createCollectionNameByID: (collections: { id: number; name: string }[]) =>
         new Map(collections.map(({ id, name }) => [id, name])),
 }));
@@ -30,7 +38,6 @@ vi.mock("ente-new/photos/services/photos-fdb", () => ({
 vi.mock("ente-accounts/services/user", () => ({
     ensureLocalUser: () => ({ id: 1 }),
 }));
-
 const file = (
     id: number,
     collectionID: number,
@@ -91,11 +98,10 @@ describe("deduceDuplicates through Rust WASM", () => {
             },
         ]);
         await removeSelectedDuplicateGroups(groups, vi.fn(), vi.fn());
-        expect(addToCollection).toHaveBeenCalledExactlyOnceWith(
-            expect.objectContaining({ id: 11 }),
-            [second],
-        );
-        expect(moveToTrash).toHaveBeenCalledExactlyOnceWith([first]);
+        expect(executeDuplicateRemoval.mock.calls[0]![1].plan).toEqual({
+            additions: [{ collectionId: 11, fileIds: [2] }],
+            trashIds: [1],
+        });
     });
 
     test("matches legacy Live Photo hashes despite different ZIP sizes and skips groups without sizes", async () => {
@@ -163,37 +169,38 @@ const duplicateGroup = (): DuplicateGroup => ({
     isSelected: true,
 });
 
-const collections = [{ id: 11 }, { id: 12 }, { id: 13 }];
+const collections = [
+    { id: 11, key: "album-11" },
+    { id: 12, key: "album-12" },
+    { id: 13, key: "album-13" },
+];
 
 describe("removeSelectedDuplicateGroups", () => {
     beforeEach(() => {
         vi.resetAllMocks();
         savedNormalCollections.mockResolvedValue(collections);
     });
-
     test.each([123, 0])(
-        "normalizes legacy cached numeric caption %s before planning in Rust",
+        "normalizes numeric caption %s before Rust planning",
         async (caption) => {
             const group = duplicateGroup();
-            const retained = group.items[1]!.file;
-            Object.assign(retained.pubMagicMetadata!.data, { caption });
+            Object.assign(group.items[1]!.file.pubMagicMetadata!.data, {
+                caption,
+            });
             const refresh = vi.fn();
-
             await expect(
                 removeSelectedDuplicateGroups([group], vi.fn(), refresh),
             ).resolves.toEqual(new Set([group.id]));
-            expect(addToCollection.mock.calls).toEqual([
-                [collections[0], [retained]],
-                [collections[2], [retained]],
-            ]);
-            expect(moveToTrash).toHaveBeenCalledExactlyOnceWith([
-                group.items[0]!.file,
-                group.items[2]!.file,
-            ]);
+            expect(executeDuplicateRemoval.mock.calls[0]![1].plan).toEqual({
+                additions: [
+                    { collectionId: 11, fileIds: [2] },
+                    { collectionId: 13, fileIds: [2] },
+                ],
+                trashIds: [1, 3],
+            });
             expect(refresh).toHaveBeenCalledOnce();
         },
     );
-
     test.each([
         {
             label: "caption before edits",
@@ -240,150 +247,112 @@ describe("removeSelectedDuplicateGroups", () => {
                 });
             });
             await removeSelectedDuplicateGroups([group], vi.fn(), vi.fn());
-            expect(moveToTrash).toHaveBeenCalledExactlyOnceWith(
+            expect(
+                executeDuplicateRemoval.mock.calls[0]![1].plan.trashIds,
+            ).toEqual(
                 group.items
                     .filter(({ file }) => file.id !== retainedId)
-                    .map(({ file }) => file),
+                    .map(({ file }) => file.id),
             );
         },
     );
-
-    test("batches retained copies from different groups into each missing album", async () => {
-        const first = duplicateGroup();
-        const second = duplicateGroup();
-        second.id = "group-2";
-        for (const { file } of second.items) file.id += 3;
+    test("passes selected file keys, required album keys, and the shared session to Rust", async () => {
+        const group = duplicateGroup();
+        for (const item of group.items)
+            Object.assign(item.file, {
+                collectionID: [...item.collectionIDs][0],
+                key: `file-${item.file.id}`,
+            });
         const refresh = vi.fn();
-        await expect(
-            removeSelectedDuplicateGroups([first, second], vi.fn(), refresh),
-        ).resolves.toEqual(new Set([first.id, second.id]));
-        const retained = [first.items[1]!.file, second.items[1]!.file];
-        expect(addToCollection.mock.calls).toEqual([
-            [collections[0], retained],
-            [collections[2], retained],
-        ]);
-        expect(moveToTrash).toHaveBeenCalledExactlyOnceWith([
-            first.items[0]!.file,
-            first.items[2]!.file,
-            second.items[0]!.file,
-            second.items[2]!.file,
+        await removeSelectedDuplicateGroups(
+            [
+                group,
+                { ...duplicateGroup(), id: "untouched", isSelected: false },
+            ],
+            vi.fn(),
+            refresh,
+        );
+        expect(executeDuplicateRemoval).toHaveBeenCalledExactlyOnceWith(
+            session,
+            {
+                plan: {
+                    additions: [
+                        { collectionId: 11, fileIds: [2] },
+                        { collectionId: 13, fileIds: [2] },
+                    ],
+                    trashIds: [1, 3],
+                },
+                collections: [collections[0], collections[2]],
+                files: [
+                    { id: 1, collectionId: 11, key: "file-1" },
+                    { id: 2, collectionId: 12, key: "file-2" },
+                    { id: 3, collectionId: 13, key: "file-3" },
+                ],
+            },
+            expect.any(Function),
+        );
+        expect(forgetPendingFavoriteFileIDs).toHaveBeenCalledExactlyOnceWith([
+            1, 3,
         ]);
         expect(refresh).toHaveBeenCalledOnce();
     });
-
-    test("rejects invalid planner input before modifying albums or trash", async () => {
-        const group = duplicateGroup();
-        group.items[1]!.file.id = Number.MAX_SAFE_INTEGER + 1;
-        const refresh = vi.fn();
-        await expect(
-            removeSelectedDuplicateGroups([group], vi.fn(), refresh),
-        ).rejects.toBeInstanceOf(Error);
-        expect(addToCollection).not.toHaveBeenCalled();
-        expect(moveToTrash).not.toHaveBeenCalled();
-        expect(refresh).not.toHaveBeenCalled();
-    });
-
-    test("preserves album membership before trashing selected duplicates and awaits gallery refresh", async () => {
-        const group = duplicateGroup();
-        const untouched = {
-            ...duplicateGroup(),
-            id: "unselected",
-            isSelected: false,
-        };
+    test("reports Rust execution progress and awaits refresh before completion", async () => {
         const progress = vi.fn();
-        let finishRefresh!: () => void;
+        executeDuplicateRemoval.mockImplementation(
+            (_session, _input, onProgress) => {
+                onProgress(1, 3);
+                onProgress(2, 3);
+                onProgress(3, 3);
+                return Promise.resolve();
+            },
+        );
+        let finish!: () => void;
         const refresh = vi.fn(
             () =>
                 new Promise<void>((resolve) => {
-                    finishRefresh = resolve;
+                    finish = resolve;
                 }),
         );
         const removal = removeSelectedDuplicateGroups(
-            [group, untouched],
+            [duplicateGroup()],
             progress,
             refresh,
         );
         await vi.waitFor(() => expect(refresh).toHaveBeenCalledOnce());
-        expect(addToCollection.mock.calls).toEqual([
-            [collections[0], [group.items[1]!.file]],
-            [collections[2], [group.items[1]!.file]],
-        ]);
-        expect(moveToTrash).toHaveBeenCalledExactlyOnceWith([
-            group.items[0]!.file,
-            group.items[2]!.file,
-        ]);
-        expect(addToCollection.mock.invocationCallOrder[1]).toBeLessThan(
-            moveToTrash.mock.invocationCallOrder[0]!,
-        );
-        expect(moveToTrash.mock.invocationCallOrder[0]).toBeLessThan(
-            refresh.mock.invocationCallOrder[0]!,
-        );
         expect(progress.mock.calls).toEqual([[25], [50], [75]]);
-        finishRefresh();
-        await expect(removal).resolves.toEqual(new Set([group.id]));
+        expect(
+            forgetPendingFavoriteFileIDs.mock.invocationCallOrder[0],
+        ).toBeLessThan(refresh.mock.invocationCallOrder[0]!);
+        finish();
+        await expect(removal).resolves.toEqual(new Set(["group-1"]));
         expect(progress).toHaveBeenLastCalledWith(100);
     });
-
-    test("does not trash files when preserving album membership fails", async () => {
-        const failure = new Error("Add failed");
-        addToCollection.mockRejectedValue(failure);
+    test("rejects invalid IDs before executing", async () => {
+        const group = duplicateGroup();
+        group.items[1]!.file.id = Number.MAX_SAFE_INTEGER + 1;
+        await expect(
+            removeSelectedDuplicateGroups([group], vi.fn(), vi.fn()),
+        ).rejects.toBeInstanceOf(Error);
+        expect(executeDuplicateRemoval).not.toHaveBeenCalled();
+    });
+    test("does not clear local state or refresh when Rust execution fails", async () => {
+        const failure = new Error("Rust request failed");
+        executeDuplicateRemoval.mockRejectedValue(failure);
         const refresh = vi.fn();
         await expect(
             removeSelectedDuplicateGroups([duplicateGroup()], vi.fn(), refresh),
         ).rejects.toBe(failure);
-        expect(moveToTrash).not.toHaveBeenCalled();
+        expect(forgetPendingFavoriteFileIDs).not.toHaveBeenCalled();
         expect(refresh).not.toHaveBeenCalled();
     });
-
-    test("does not trash any files if a later album addition fails", async () => {
-        const failure = new Error("Second album failed");
-        addToCollection
-            .mockResolvedValueOnce(undefined)
-            .mockRejectedValueOnce(failure);
-        const refresh = vi.fn();
-        await expect(
-            removeSelectedDuplicateGroups([duplicateGroup()], vi.fn(), refresh),
-        ).rejects.toBe(failure);
-        expect(addToCollection).toHaveBeenCalledTimes(2);
-        expect(moveToTrash).not.toHaveBeenCalled();
-        expect(refresh).not.toHaveBeenCalled();
-    });
-
-    test("does not refresh when trashing fails", async () => {
-        const failure = new Error("Trash failed");
-        moveToTrash.mockRejectedValue(failure);
-        const refresh = vi.fn();
-        await expect(
-            removeSelectedDuplicateGroups([duplicateGroup()], vi.fn(), refresh),
-        ).rejects.toBe(failure);
-        expect(refresh).not.toHaveBeenCalled();
-    });
-
-    test("does not report completion when gallery refresh fails", async () => {
+    test("propagates refresh failures without reporting completion", async () => {
         const failure = new Error("Refresh failed");
-        const refresh = vi.fn().mockRejectedValue(failure);
         const progress = vi.fn();
         await expect(
-            removeSelectedDuplicateGroups(
-                [duplicateGroup()],
-                progress,
-                refresh,
+            removeSelectedDuplicateGroups([duplicateGroup()], progress, () =>
+                Promise.reject(failure),
             ),
         ).rejects.toBe(failure);
         expect(progress).not.toHaveBeenCalledWith(100);
-    });
-
-    test("only refreshes when no groups are selected", async () => {
-        const refresh = vi.fn();
-        await expect(
-            removeSelectedDuplicateGroups(
-                [{ ...duplicateGroup(), isSelected: false }],
-                vi.fn(),
-                refresh,
-            ),
-        ).resolves.toEqual(new Set());
-        expect(addToCollection).not.toHaveBeenCalled();
-        expect(moveToTrash).not.toHaveBeenCalled();
-        expect(refresh).toHaveBeenCalledOnce();
     });
 });

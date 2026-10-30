@@ -1,5 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
+mod removal;
+
+pub use removal::{RemovalCollection, RemovalError, RemovalFile, RemovalProgress, execute_removal};
+
 pub struct Collection {
     pub id: i64,
     pub owner_id: i64,

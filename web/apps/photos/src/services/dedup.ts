@@ -7,13 +7,17 @@ import {
     metadataHash,
 } from "ente-media/file-metadata";
 import {
-    addToCollection,
     createCollectionNameByID,
-    moveToTrash,
+    forgetPendingFavoriteFileIDs,
     savedNormalCollections,
 } from "ente-new/photos/services/collection";
 import { savedCollectionFiles } from "ente-new/photos/services/photos-fdb";
-import { findDuplicates, planDuplicateRemoval } from "ente-photos-wasm";
+import {
+    executeDuplicateRemoval,
+    findDuplicates,
+    planDuplicateRemoval,
+} from "ente-photos-wasm";
+import { ensureAuthenticatedSession } from "./authenticated-session";
 
 export interface DuplicateGroup {
     id: string;
@@ -113,28 +117,31 @@ export const removeSelectedDuplicateGroups = async (
         ),
     });
 
-    let np = 0;
     const ntotal =
         plan.additions.length + (plan.trashIds.length ? 1 : 0) + /* sync */ 1;
-    const tickProgress = () => onProgress((++np / ntotal) * 100);
-
     const collections = await savedNormalCollections();
-    const collectionsByID = new Map(collections.map((c) => [c.id, c]));
-    for (const { collectionId, fileIds } of plan.additions) {
-        await addToCollection(
-            collectionsByID.get(collectionId)!,
-            fileIds.map((id) => filesByID.get(id)!),
-        );
-        tickProgress();
-    }
-
-    if (plan.trashIds.length) {
-        await moveToTrash(plan.trashIds.map((id) => filesByID.get(id)!));
-        tickProgress();
-    }
+    const additionCollectionIDs = new Set(
+        plan.additions.map((a) => a.collectionId),
+    );
+    await executeDuplicateRemoval(
+        await ensureAuthenticatedSession(),
+        {
+            plan,
+            collections: collections
+                .filter(({ id }) => additionCollectionIDs.has(id))
+                .map(({ id, key }) => ({ id, key })),
+            files: [...filesByID.values()].map(({ id, collectionID, key }) => ({
+                id,
+                collectionId: collectionID,
+                key,
+            })),
+        },
+        (completed) => onProgress((completed / ntotal) * 100),
+    );
+    forgetPendingFavoriteFileIDs(plan.trashIds);
 
     await onRemoteFilesPull();
-    tickProgress();
+    onProgress(100);
 
     return new Set(selectedDuplicateGroups.map((g) => g.id));
 };
