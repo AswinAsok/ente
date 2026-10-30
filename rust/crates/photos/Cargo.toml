@@ -2,9 +2,6 @@
 name = "ente-photos"
 edition.workspace = true
 
-[features]
-museum = []
-
 [dependencies]
 ente-collections.workspace = true
 ente-core.workspace = true
@@ -23,8 +20,6 @@ futures-util.workspace = true
 rusqlite = { workspace = true, default-features = true }
 
 [dev-dependencies]
-ente-test-support.workspace = true
-md-5.workspace = true
 mockito.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
