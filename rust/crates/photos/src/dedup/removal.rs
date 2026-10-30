@@ -7,7 +7,7 @@ use ente_core::{
 };
 use serde::Serialize;
 
-use super::RemovalPlan;
+use super::{Duplicate, RemovalPlan, plan_removal};
 
 const REQUEST_BATCH_SIZE: usize = 1000;
 
@@ -66,6 +66,18 @@ struct TrashItem {
 #[derive(Serialize)]
 struct TrashFiles<'a> {
     items: &'a [TrashItem],
+}
+
+pub async fn remove_duplicates(
+    session: &Session,
+    groups: &[Vec<Duplicate>],
+    collections: &[RemovalCollection],
+    files: &[RemovalFile],
+    on_progress: impl FnMut(RemovalProgress),
+) -> Result<Vec<i64>, RemovalError> {
+    let plan = plan_removal(groups);
+    execute_removal(session, &plan, collections, files, on_progress).await?;
+    Ok(plan.trash_ids)
 }
 
 pub async fn execute_removal(

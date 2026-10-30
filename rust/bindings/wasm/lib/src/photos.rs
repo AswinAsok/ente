@@ -126,25 +126,6 @@ struct Duplicate {
 }
 
 #[derive(Deserialize, Tsify)]
-pub struct PlanDuplicateRemovalInput {
-    groups: Vec<Vec<Duplicate>>,
-}
-
-#[derive(Deserialize, Serialize, Tsify)]
-#[serde(rename_all = "camelCase")]
-struct DuplicateAddition {
-    collection_id: i64,
-    file_ids: Vec<i64>,
-}
-
-#[derive(Deserialize, Serialize, Tsify)]
-#[serde(rename_all = "camelCase")]
-pub struct DuplicateRemovalPlan {
-    additions: Vec<DuplicateAddition>,
-    trash_ids: Vec<i64>,
-}
-
-#[derive(Deserialize, Tsify)]
 struct RemovalCollection {
     id: i64,
     key: String,
@@ -160,9 +141,15 @@ struct RemovalFile {
 
 #[derive(Deserialize, Tsify)]
 pub struct ExecuteDuplicateRemovalInput {
-    plan: DuplicateRemovalPlan,
+    groups: Vec<Vec<Duplicate>>,
     collections: Vec<RemovalCollection>,
     files: Vec<RemovalFile>,
+}
+
+#[derive(Serialize, Tsify)]
+#[serde(rename_all = "camelCase")]
+pub struct DuplicateRemovalResult {
+    trash_ids: Vec<i64>,
 }
 
 #[wasm_bindgen(js_name = photosExecuteDuplicateRemoval)]
@@ -170,20 +157,24 @@ pub async fn execute_duplicate_removal(
     session: &Session,
     input: <ExecuteDuplicateRemovalInput as Tsify>::JsType,
     on_progress: js_sys::Function,
-) -> Result<(), Error> {
+) -> Result<<DuplicateRemovalResult as Tsify>::JsType, Error> {
     let input = ExecuteDuplicateRemovalInput::from_js(input)?;
-    let plan = dedup::RemovalPlan {
-        additions: input
-            .plan
-            .additions
-            .into_iter()
-            .map(|a| dedup::Addition {
-                collection_id: a.collection_id,
-                file_ids: a.file_ids,
-            })
-            .collect(),
-        trash_ids: input.plan.trash_ids,
-    };
+    let groups = input
+        .groups
+        .into_iter()
+        .map(|group| {
+            group
+                .into_iter()
+                .map(|item| dedup::Duplicate {
+                    file_id: item.file_id,
+                    collection_ids: item.collection_ids,
+                    caption: item.caption,
+                    edited_name: item.edited_name,
+                    edited_time: item.edited_time,
+                })
+                .collect()
+        })
+        .collect::<Vec<_>>();
     let collections = input
         .collections
         .into_iter()
@@ -205,7 +196,7 @@ pub async fn execute_duplicate_removal(
             })
         })
         .collect::<Result<Vec<_>, Error>>()?;
-    dedup::execute_removal(session.inner(), &plan, &collections, &files, |p| {
+    let trash_ids = dedup::remove_duplicates(session.inner(), &groups, &collections, &files, |p| {
         let _ = on_progress.call2(
             &JsValue::UNDEFINED,
             &JsValue::from_f64(p.completed as f64),
@@ -213,42 +204,7 @@ pub async fn execute_duplicate_removal(
         );
     })
     .await?;
-    Ok(())
-}
-
-#[wasm_bindgen(js_name = photosPlanDuplicateRemoval)]
-pub fn plan_duplicate_removal(
-    input: <PlanDuplicateRemovalInput as Tsify>::JsType,
-) -> Result<<DuplicateRemovalPlan as Tsify>::JsType, Error> {
-    let input = PlanDuplicateRemovalInput::from_js(input)?;
-    let groups: Vec<_> = input
-        .groups
-        .into_iter()
-        .map(|group| {
-            group
-                .into_iter()
-                .map(|item| dedup::Duplicate {
-                    file_id: item.file_id,
-                    collection_ids: item.collection_ids,
-                    caption: item.caption,
-                    edited_name: item.edited_name,
-                    edited_time: item.edited_time,
-                })
-                .collect()
-        })
-        .collect();
-    let plan = dedup::plan_removal(&groups);
-    DuplicateRemovalPlan {
-        additions: plan
-            .additions
-            .into_iter()
-            .map(|addition| DuplicateAddition {
-                collection_id: addition.collection_id,
-                file_ids: addition.file_ids,
-            })
-            .collect(),
-        trash_ids: plan.trash_ids,
-    }
-    .into_js()
-    .map_err(Into::into)
+    DuplicateRemovalResult { trash_ids }
+        .into_js()
+        .map_err(Into::into)
 }

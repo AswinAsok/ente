@@ -12,11 +12,7 @@ import {
     savedNormalCollections,
 } from "ente-new/photos/services/collection";
 import { savedCollectionFiles } from "ente-new/photos/services/photos-fdb";
-import {
-    executeDuplicateRemoval,
-    findDuplicates,
-    planDuplicateRemoval,
-} from "ente-photos-wasm";
+import { executeDuplicateRemoval, findDuplicates } from "ente-photos-wasm";
 import { ensureAuthenticatedSession } from "./authenticated-session";
 
 export interface DuplicateGroup {
@@ -98,47 +94,42 @@ export const removeSelectedDuplicateGroups = async (
 ) => {
     const selectedDuplicateGroups = duplicateGroups.filter((g) => g.isSelected);
 
+    if (!selectedDuplicateGroups.length) {
+        await onRemoteFilesPull();
+        onProgress(100);
+        return new Set<string>();
+    }
+
     const filesByID = new Map(
         selectedDuplicateGroups.flatMap((group) =>
             group.items.map(({ file }) => [file.id, file] as const),
         ),
     );
-    const plan = await planDuplicateRemoval({
-        groups: selectedDuplicateGroups.map((group) =>
-            group.items.map(({ file, collectionIDs }) => ({
-                fileId: file.id,
-                collectionIds: [...collectionIDs],
-                caption: FilePublicMagicMetadataData.shape.caption.parse(
-                    file.pubMagicMetadata?.data.caption,
-                ),
-                editedName: file.pubMagicMetadata?.data.editedName,
-                editedTime: file.pubMagicMetadata?.data.editedTime,
-            })),
-        ),
-    });
-
-    const ntotal =
-        plan.additions.length + (plan.trashIds.length ? 1 : 0) + /* sync */ 1;
     const collections = await savedNormalCollections();
-    const additionCollectionIDs = new Set(
-        plan.additions.map((a) => a.collectionId),
-    );
-    await executeDuplicateRemoval(
+    const { trashIds } = await executeDuplicateRemoval(
         await ensureAuthenticatedSession(),
         {
-            plan,
-            collections: collections
-                .filter(({ id }) => additionCollectionIDs.has(id))
-                .map(({ id, key }) => ({ id, key })),
+            groups: selectedDuplicateGroups.map((group) =>
+                group.items.map(({ file, collectionIDs }) => ({
+                    fileId: file.id,
+                    collectionIds: [...collectionIDs],
+                    caption: FilePublicMagicMetadataData.shape.caption.parse(
+                        file.pubMagicMetadata?.data.caption,
+                    ),
+                    editedName: file.pubMagicMetadata?.data.editedName,
+                    editedTime: file.pubMagicMetadata?.data.editedTime,
+                })),
+            ),
+            collections: collections.map(({ id, key }) => ({ id, key })),
             files: [...filesByID.values()].map(({ id, collectionID, key }) => ({
                 id,
                 collectionId: collectionID,
                 key,
             })),
         },
-        (completed) => onProgress((completed / ntotal) * 100),
+        (completed, total) => onProgress((completed / (total + 1)) * 100),
     );
-    forgetPendingFavoriteFileIDs(plan.trashIds);
+    forgetPendingFavoriteFileIDs(trashIds);
 
     await onRemoteFilesPull();
     onProgress(100);

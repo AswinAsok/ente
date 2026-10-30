@@ -55,6 +55,7 @@ const file = (
 describe("deduceDuplicates through Rust WASM", () => {
     beforeEach(() => {
         vi.resetAllMocks();
+        executeDuplicateRemoval.mockResolvedValue({ trashIds: [1] });
         savedNormalCollections.mockResolvedValue([
             { id: 11, owner: { id: 1 }, name: "B" },
             { id: 12, owner: { id: 1 }, name: "A" },
@@ -98,10 +99,12 @@ describe("deduceDuplicates through Rust WASM", () => {
             },
         ]);
         await removeSelectedDuplicateGroups(groups, vi.fn(), vi.fn());
-        expect(executeDuplicateRemoval.mock.calls[0]![1].plan).toEqual({
-            additions: [{ collectionId: 11, fileIds: [2] }],
-            trashIds: [1],
-        });
+        expect(executeDuplicateRemoval.mock.calls[0]![1].groups).toEqual([
+            [
+                expect.objectContaining({ fileId: 2, collectionIds: [12] }),
+                expect.objectContaining({ fileId: 1, collectionIds: [11, 12] }),
+            ],
+        ]);
     });
 
     test("matches legacy Live Photo hashes despite different ZIP sizes and skips groups without sizes", async () => {
@@ -179,6 +182,7 @@ describe("removeSelectedDuplicateGroups", () => {
     beforeEach(() => {
         vi.resetAllMocks();
         savedNormalCollections.mockResolvedValue(collections);
+        executeDuplicateRemoval.mockResolvedValue({ trashIds: [1, 3] });
     });
     test.each([123, 0])(
         "normalizes numeric caption %s before Rust planning",
@@ -191,72 +195,13 @@ describe("removeSelectedDuplicateGroups", () => {
             await expect(
                 removeSelectedDuplicateGroups([group], vi.fn(), refresh),
             ).resolves.toEqual(new Set([group.id]));
-            expect(executeDuplicateRemoval.mock.calls[0]![1].plan).toEqual({
-                additions: [
-                    { collectionId: 11, fileIds: [2] },
-                    { collectionId: 13, fileIds: [2] },
-                ],
-                trashIds: [1, 3],
-            });
+            expect(
+                executeDuplicateRemoval.mock.calls[0]![1].groups[0]![1],
+            ).toMatchObject({ fileId: 2, caption: String(caption) });
             expect(refresh).toHaveBeenCalledOnce();
         },
     );
-    test.each([
-        {
-            label: "caption before edits",
-            metadata: [{ editedName: "renamed" }, { caption: "caption" }, {}],
-            retainedId: 2,
-        },
-        {
-            label: "renamed copy",
-            metadata: [{}, {}, { editedName: "renamed" }],
-            retainedId: 3,
-        },
-        {
-            label: "edited timestamp",
-            metadata: [{}, { editedTime: 123 }, {}],
-            retainedId: 2,
-        },
-        {
-            label: "first of equal captions",
-            metadata: [{}, { caption: "one" }, { caption: "two" }],
-            retainedId: 2,
-        },
-        {
-            label: "first of equal edits",
-            metadata: [{}, { editedName: "one" }, { editedTime: 123 }],
-            retainedId: 2,
-        },
-        {
-            label: "empty caption and null caption",
-            metadata: [{}, { caption: "" }, { caption: null }],
-            retainedId: 1,
-        },
-        {
-            label: "empty name overrides edited timestamp",
-            metadata: [{}, { editedName: "", editedTime: 123 }, {}],
-            retainedId: 1,
-        },
-    ])(
-        "retains the $label through Rust WASM",
-        async ({ metadata, retainedId }) => {
-            const group = duplicateGroup();
-            group.items.forEach(({ file }, index) => {
-                Object.assign(file, {
-                    pubMagicMetadata: { data: metadata[index] },
-                });
-            });
-            await removeSelectedDuplicateGroups([group], vi.fn(), vi.fn());
-            expect(
-                executeDuplicateRemoval.mock.calls[0]![1].plan.trashIds,
-            ).toEqual(
-                group.items
-                    .filter(({ file }) => file.id !== retainedId)
-                    .map(({ file }) => file.id),
-            );
-        },
-    );
-    test("passes selected file keys, required album keys, and the shared session to Rust", async () => {
+    test("passes only selected groups and their files, saved album keys, and the shared session to Rust", async () => {
         const group = duplicateGroup();
         for (const item of group.items)
             Object.assign(item.file, {
@@ -275,14 +220,32 @@ describe("removeSelectedDuplicateGroups", () => {
         expect(executeDuplicateRemoval).toHaveBeenCalledExactlyOnceWith(
             session,
             {
-                plan: {
-                    additions: [
-                        { collectionId: 11, fileIds: [2] },
-                        { collectionId: 13, fileIds: [2] },
+                groups: [
+                    [
+                        {
+                            fileId: 1,
+                            collectionIds: [11, 12],
+                            caption: undefined,
+                            editedName: undefined,
+                            editedTime: undefined,
+                        },
+                        {
+                            fileId: 2,
+                            collectionIds: [12],
+                            caption: "Keep this copy",
+                            editedName: undefined,
+                            editedTime: undefined,
+                        },
+                        {
+                            fileId: 3,
+                            collectionIds: [13],
+                            caption: undefined,
+                            editedName: undefined,
+                            editedTime: undefined,
+                        },
                     ],
-                    trashIds: [1, 3],
-                },
-                collections: [collections[0], collections[2]],
+                ],
+                collections,
                 files: [
                     { id: 1, collectionId: 11, key: "file-1" },
                     { id: 2, collectionId: 12, key: "file-2" },
@@ -303,7 +266,7 @@ describe("removeSelectedDuplicateGroups", () => {
                 onProgress(1, 3);
                 onProgress(2, 3);
                 onProgress(3, 3);
-                return Promise.resolve();
+                return Promise.resolve({ trashIds: [1, 3] });
             },
         );
         let finish!: () => void;
@@ -327,14 +290,6 @@ describe("removeSelectedDuplicateGroups", () => {
         await expect(removal).resolves.toEqual(new Set(["group-1"]));
         expect(progress).toHaveBeenLastCalledWith(100);
     });
-    test("rejects invalid IDs before executing", async () => {
-        const group = duplicateGroup();
-        group.items[1]!.file.id = Number.MAX_SAFE_INTEGER + 1;
-        await expect(
-            removeSelectedDuplicateGroups([group], vi.fn(), vi.fn()),
-        ).rejects.toBeInstanceOf(Error);
-        expect(executeDuplicateRemoval).not.toHaveBeenCalled();
-    });
     test("does not clear local state or refresh when Rust execution fails", async () => {
         const failure = new Error("Rust request failed");
         executeDuplicateRemoval.mockRejectedValue(failure);
@@ -354,5 +309,46 @@ describe("removeSelectedDuplicateGroups", () => {
             ),
         ).rejects.toBe(failure);
         expect(progress).not.toHaveBeenCalledWith(100);
+    });
+    test("passes multiple selected groups in one call and uses Rust's returned trash IDs", async () => {
+        const first = duplicateGroup();
+        const second = duplicateGroup();
+        second.id = "group-2";
+        for (const { file } of second.items) file.id += 3;
+        executeDuplicateRemoval.mockResolvedValue({ trashIds: [1, 3, 4, 6] });
+        await expect(
+            removeSelectedDuplicateGroups([first, second], vi.fn(), vi.fn()),
+        ).resolves.toEqual(new Set([first.id, second.id]));
+        expect(executeDuplicateRemoval).toHaveBeenCalledOnce();
+        expect(
+            executeDuplicateRemoval.mock.calls[0]![1].groups.map((g) =>
+                g.map((i) => i.fileId),
+            ),
+        ).toEqual([
+            [1, 2, 3],
+            [4, 5, 6],
+        ]);
+        expect(
+            executeDuplicateRemoval.mock.calls[0]![1].files.map((f) => f.id),
+        ).toEqual([1, 2, 3, 4, 5, 6]);
+        expect(forgetPendingFavoriteFileIDs).toHaveBeenCalledExactlyOnceWith([
+            1, 3, 4, 6,
+        ]);
+    });
+    test("only refreshes when no groups are selected", async () => {
+        const refresh = vi.fn();
+        const progress = vi.fn();
+        await expect(
+            removeSelectedDuplicateGroups(
+                [{ ...duplicateGroup(), isSelected: false }],
+                progress,
+                refresh,
+            ),
+        ).resolves.toEqual(new Set());
+        expect(executeDuplicateRemoval).not.toHaveBeenCalled();
+        expect(savedNormalCollections).not.toHaveBeenCalled();
+        expect(forgetPendingFavoriteFileIDs).not.toHaveBeenCalled();
+        expect(refresh).toHaveBeenCalledOnce();
+        expect(progress).toHaveBeenCalledExactlyOnceWith(100);
     });
 });
