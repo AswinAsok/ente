@@ -157,6 +157,23 @@ pub fn decrypt(remote: &RemoteFile, collection_key: &Key) -> Result<(Key, Docume
     Ok((key, documents))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub fn duplicate(
+    file: &File,
+    documents: &Documents,
+    collection_ids: Vec<i64>,
+) -> Result<crate::dedup::Duplicate, Error> {
+    let public: PublicMetadata =
+        source::optional(documents.public.as_deref(), "invalid public file metadata")?;
+    Ok(crate::dedup::Duplicate {
+        file_id: file.id,
+        collection_ids,
+        caption: file.caption.clone(),
+        edited_name: public.edited_name,
+        edited_time: public.edited_time,
+    })
+}
+
 pub fn interpret(
     remote: &RemoteFile,
     key: &Key,

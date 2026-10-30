@@ -1,3 +1,4 @@
+mod duplicates;
 mod export;
 pub mod replica;
 
@@ -34,6 +35,16 @@ pub async fn run(command: PhotosCommand, selected: Option<&str>, options: &Optio
             ),
         "original files are not stored locally; download requires network access"
     );
+    if let PhotosCommand::Duplicates(args) = &command {
+        ensure!(
+            !args.remove || !options.offline,
+            "duplicate removal requires network access"
+        );
+        ensure!(
+            !args.remove || args.yes || options.can_prompt(),
+            "this change requires confirmation; supply --yes when running without interactive prompts"
+        );
+    }
     let (account, home) = home::open_account(selected, !options.offline)?;
     let session = api::session(&account, App::Photos)?;
     let mut db = db::open(&home.path, &account.db_key, !options.offline)?;
@@ -49,6 +60,9 @@ pub async fn run(command: PhotosCommand, selected: Option<&str>, options: &Optio
     }
     match command {
         PhotosCommand::Api(_) | PhotosCommand::Export(_) => unreachable!(),
+        PhotosCommand::Duplicates(args) => {
+            duplicates::run(&args, &session, &mut replica, options).await
+        }
         PhotosCommand::Album { command } => album(command, &replica, options),
         PhotosCommand::File { album, command } => {
             file(command, album.as_deref(), &session, &mut replica, options).await

@@ -394,6 +394,179 @@ fn file_lists_filter_and_sort_server_metadata() -> TestResult {
     })
 }
 
+#[test]
+fn duplicates_find_remove_and_download_across_processes() -> TestResult {
+    Museum::run_async(|origin| async move {
+        let email = format!("duplicates-{}@example.org", Uuid::new_v4());
+        let owner = create_account(&origin, &email).await;
+        let (first, first_key) = create_album(&origin, &owner, "First", "album").await;
+        let (second, second_key) = create_album(&origin, &owner, "Second", "album").await;
+        let (hidden, hidden_key) =
+            create_album(&origin, &owner, "Hidden duplicates", "album").await;
+        set_album_metadata(
+            &origin,
+            &owner,
+            hidden,
+            &hidden_key,
+            "magic-metadata",
+            json!({"visibility": 2}),
+        )
+        .await;
+        let original = b"duplicate original bytes for a live Museum test";
+        let metadata = json!({"title": "duplicate.jpg", "fileType": 0,
+            "creationTime": 1_700_000_000_000_000i64, "hash": "same-content"});
+        let (plain, _) = upload_fixture(
+            &origin,
+            &owner,
+            hidden,
+            &hidden_key,
+            original,
+            metadata.clone(),
+        )
+        .await;
+        let (edited, edited_key) = upload_fixture(
+            &origin,
+            &owner,
+            first,
+            &first_key,
+            original,
+            metadata.clone(),
+        )
+        .await;
+        let (retained, retained_key) = upload_fixture(
+            &origin,
+            &owner,
+            second,
+            &second_key,
+            original,
+            metadata.clone(),
+        )
+        .await;
+        for (id, key, data) in [
+            (edited, &edited_key, json!({"editedName": "renamed.jpg"})),
+            (
+                retained,
+                &retained_key,
+                json!({"caption": "keep this caption"}),
+            ),
+        ] {
+            let encrypted = blob::encrypt_json(&data, key)?;
+            reqwest::Client::new()
+                .put(format!("{origin}/files/public-magic-metadata"))
+                .header("x-auth-token", b64::encode_url_safe(&owner.secrets.token))
+                .header("x-client-package", "io.ente.photos")
+                .json(&json!({"metadataList": [{"id": id, "magicMetadata": {
+                    "version": 1, "count": 1, "data": b64::encode(&encrypted.encrypted_data),
+                    "header": b64::encode(encrypted.decryption_header.as_bytes())
+                }}]}))
+                .send()
+                .await?
+                .error_for_status()?;
+        }
+        let other_email = format!("other-duplicates-{}@example.org", Uuid::new_v4());
+        let other = create_account(&origin, &other_email).await;
+        let (shared, shared_key) =
+            create_album(&origin, &other, "Someone else's album", "album").await;
+        let (foreign, _) =
+            upload_fixture(&origin, &other, shared, &shared_key, original, metadata).await;
+        let encrypted_key = sealed::seal(
+            shared_key.as_bytes(),
+            &PublicKey::try_from_slice(&owner.secrets.public_key)?,
+        )?;
+        reqwest::Client::new().post(format!("{origin}/collections/share"))
+            .header("x-auth-token", b64::encode_url_safe(&other.secrets.token))
+            .header("x-client-package", "io.ente.photos")
+            .json(&json!({"collectionID": shared, "email": email, "encryptedKey": b64::encode(&encrypted_key), "role": "VIEWER"}))
+            .send().await?.error_for_status()?;
+        let home = TestHome::new();
+        login(&home, "photos", &email, &["--host", &origin, "--no-input"]);
+        let groups = home.json(&["photos", "duplicates", "--all"]);
+        assert_eq!(groups.as_array().unwrap().len(), 1);
+        let ids: Vec<_> = groups[0]["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|file| file["id"].as_str().unwrap().to_owned())
+            .collect();
+        assert_eq!(ids, [plain, edited, retained].map(|id| id.to_string()));
+        assert!(groups[0]["sizeBytes"].as_u64().unwrap() > 0);
+        assert_eq!(
+            home.json(&["photos", "duplicates", "--all", "--offline"]),
+            groups
+        );
+        let result = home.json(&[
+            "photos",
+            "duplicates",
+            "--remove",
+            "--all",
+            "--yes",
+            "--no-input",
+        ]);
+        assert_eq!(
+            result,
+            json!({"movedToTrash": [plain.to_string(), edited.to_string()]})
+        );
+        assert_eq!(
+            home.json(&["photos", "duplicates", "--all", "--offline"]),
+            json!([])
+        );
+        assert_eq!(home.json(&["photos", "duplicates", "--all"]), json!([]));
+        let retained_id = retained.to_string();
+        let retained_view = home.json(&["photos", "file", "view", &retained_id]);
+        assert_eq!(
+            home.json(&["photos", "file", "view", &retained_id, "--offline"]),
+            retained_view
+        );
+        assert_eq!(retained_view["caption"], "keep this caption");
+        let mut expected_albums = [first, second, hidden];
+        expected_albums.sort();
+        assert_eq!(
+            retained_view["albumIds"],
+            json!(expected_albums.map(|id| id.to_string()))
+        );
+        let downloads = tempfile::tempdir()?;
+        for album in [first, second, hidden] {
+            let path = downloads.path().join(format!("{album}.jpg"));
+            success(home.run(&[
+                "photos",
+                "file",
+                "download",
+                &retained_id,
+                "--album",
+                &album.to_string(),
+                "--output",
+                path.to_str().unwrap(),
+            ]));
+            assert_eq!(fs::read(path)?, original);
+        }
+        let trash = home.json(&["photos", "api", "/trash/v2/diff", "--query", "sinceTime=0"]);
+        let mut trashed: Vec<_> = trash["diff"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item["file"]["id"].as_i64().unwrap())
+            .collect();
+        trashed.sort();
+        assert_eq!(trashed, vec![plain, edited]);
+        assert_eq!(
+            home.json(&["photos", "file", "view", &foreign.to_string()])["ownerId"],
+            other.user_id.to_string()
+        );
+        assert_eq!(
+            home.json(&[
+                "photos",
+                "duplicates",
+                "--remove",
+                "--all",
+                "--yes",
+                "--no-input"
+            ]),
+            json!({"movedToTrash": []})
+        );
+        Ok(())
+    })
+}
+
 async fn exercise(origin: String) -> TestResult {
     let alice_email = format!("alice-{}@example.org", Uuid::new_v4());
     let bob_email = format!("bob-{}@example.org", Uuid::new_v4());

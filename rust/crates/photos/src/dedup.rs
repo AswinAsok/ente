@@ -1,3 +1,8 @@
+#[cfg(not(target_arch = "wasm32"))]
+mod removal;
+#[cfg(not(target_arch = "wasm32"))]
+pub use removal::{RemovalError, remove_duplicates};
+
 use std::collections::{HashMap, HashSet};
 
 pub struct Collection {

@@ -107,6 +107,56 @@ ente photos file list --type video --min-size 500MB
 
 A file must match every filter you pass. `--sort created` lists the newest files first and `--sort size` the largest first; add `--reverse` for the opposite order. Files with an unknown size sort as the smallest, and ties keep ID order. Without `--sort`, files are listed by ID.
 
+## Find duplicates
+
+```sh
+ente photos duplicates
+ente photos duplicates --all --json
+```
+
+Find separate uploads with the same stored hash. The command refreshes metadata and reports groups of duplicates without changing your library. A file in several albums counts once. Only files you own in albums you own are included, including hidden albums. Files without a hash and groups without a known nonzero size are left out. For Live Photos, the stored hash includes both the image and video hashes.
+
+The table shows file IDs, names and the stored size of one item in each group, in bytes. Groups follow file ID order. As with other lists, 100 groups are shown by default; use `--limit N` or `--all` to see more. `--offline` reads metadata from an earlier online run and requires every album you own to have finished syncing.
+
+With `--json`, each group contains the stored size of one item and its distinct files:
+
+```json
+[
+    {
+        "sizeBytes": 1048576,
+        "files": [
+            {
+                "id": "1580559962386999",
+                "name": "IMG_0001.jpg",
+                "albumIds": ["123", "456"]
+            },
+            {
+                "id": "1580559962387000",
+                "name": "IMG_0001.jpg",
+                "albumIds": ["456"]
+            }
+        ]
+    }
+]
+```
+
+IDs are strings. `albumIds` lists each file's owned album memberships; it does not mean the file was uploaded more than once. No duplicates returns `[]` with `--json`, or `No duplicates.` in plain output.
+
+### Remove duplicates
+
+```sh
+ente photos duplicates --remove --all
+ente photos duplicates --remove --all --yes --no-input --json
+```
+
+`--remove` keeps one file per reported group and moves the extra files to Trash. It prefers a file with a caption, then one with an edited name or date, then the first file by ID. Before moving any files to Trash, it adds each retained file to the owned albums that would otherwise lose their copy. Other copies' captions and edits are not merged.
+
+Removal uses the same scope as the report: 100 groups by default, `--limit N` for a different number, or `--all` for every group. It includes hidden albums, and only preserves memberships in albums you own. Preview that scope without `--remove` first. Removal refreshes metadata again, so changes made since the preview can affect its result.
+
+The CLI asks for confirmation. `--yes` approves removal; `--no-input` only disables prompts. Removal requires network access and cannot use `--offline`. It prints `Moved 12 duplicate files to Trash.` or, with `--json`, `{"movedToTrash":["1580559962386999"]}` with the IDs moved to Trash. You can restore them in Ente Photos while they remain in Trash.
+
+If an album addition fails, removal stops before moving any duplicates to Trash. Requests run in batches, so an error can leave some additions or Trash moves completed. Run `ente photos duplicates` online before retrying to refresh the report. A successful removal refreshes local metadata for subsequent offline reads.
+
 ## Read as JSON
 
 Lists return arrays and `view` returns one object. IDs are strings; timestamps are RFC 3339 strings in UTC.
@@ -116,11 +166,12 @@ Lists return arrays and `view` returns one object. IDs are strings; timestamps a
 | `album list`, `album view` | `id`, `name`, `type` (`album`, `folder`, `favorites`, `uncategorized`, `defaultHidden`, `quicklink`), `visibility` (`visible`, `archived`, `hidden`), `ownerId`, `updatedAt`                                                                                                     |
 | `file list`, `file view`   | `id`, `name`, `type` (`image`, `video`, `livephoto`), `ownerId`, `albumIds`, `createdAt`, `updatedAt`; nullable `modifiedAt`, `location` (`latitude`, `longitude`), `caption`, `hash`, `dateTime`, `offsetTime`, `visibility`, `durationSeconds`, `width`, `height`, `sizeBytes` |
 | `file download`            | `id`, `output`, `bytes`                                                                                                                                                                                                                                                          |
+| `duplicates`               | Without `--remove`, an array of groups: `sizeBytes` (size of one item), `files` (array of `id`, `name`, `albumIds`). IDs are strings; `albumIds` includes only albums you own. With `--remove`: `movedToTrash` (array of file ID strings).                                       |
 | `export`                   | See [Automation](./automation.md#export-summary)                                                                                                                                                                                                                                 |
 
 ## Read offline
 
-`album list`, `album view`, `file list` and `file view` work with `--offline` using the metadata an earlier online run synced. An online `album list` syncs albums only; run `file list` online for each album whose files you want to read offline. Export and download need the network.
+`album list`, `album view`, `file list`, `file view` and `duplicates` work with `--offline` using the metadata an earlier online run synced. An online `album list` syncs albums only; run `file list` online for each album whose files you want to read offline. Export, download and duplicate removal need the network.
 
 ## Limits
 

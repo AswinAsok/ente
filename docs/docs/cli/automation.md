@@ -105,6 +105,22 @@ exec "$HOME/.local/opt/ente-cli/bin/ente" auth export "$HOME/Backups/Auth" --acc
 
 `ENTE_CLI_PASSWORD` supplies the password for an encrypted backup and is required with `--no-input`; a `--plaintext` export needs none. The result is `{"output": "/home/alice/Backups/Auth/ente-auth-2026-10-22.json", "codes": 12, "failures": {"total": 0}}`. Test a backup by decrypting it: `ente auth decrypt FILE --output -` with the same variable set.
 
+## Find and remove duplicate photos
+
+Get a report for a saved account:
+
+```sh
+ente photos duplicates --account personal --all --no-input --json
+```
+
+To remove duplicates without a prompt, add `--remove --yes`:
+
+```sh
+ente photos duplicates --account personal --remove --all --yes --no-input --json
+```
+
+`--all` includes every duplicate group; use `--limit N` instead to process at most N groups. `--yes` approves removal, while `--no-input` alone does not. Removal returns an object such as `{"movedToTrash":["1580559962386999"]}`; an empty array means there was nothing to remove. Check the exit status before reading this result. A failed run can have completed some changes; refresh the report online before retrying. See [Photos](./photos.md#remove-duplicates) for retention rules and album handling.
+
 ## Make an API request
 
 ```sh

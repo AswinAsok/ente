@@ -789,3 +789,312 @@ pub(super) fn page(
         ]))
         .with_body(json!({"diff": diff, "hasMore": more}).to_string())
 }
+
+#[test]
+fn duplicates_sync_report_memberships_and_work_offline() {
+    let mut server = mockito::Server::new();
+    let home = TestHome::new();
+    home.seed(&server.url());
+    let key = Key::generate();
+    let albums = server
+        .mock("GET", "/collections/v2")
+        .match_query(mockito::Matcher::Any)
+        .with_body(
+            json!({"collections": [
+                collection(1, "First", &key), collection(2, "Second", &key)
+            ]})
+            .to_string(),
+        )
+        .create();
+    let make = |id, hash: &str, size| {
+        let (mut file, _) = remote_file_with(
+            id,
+            &key,
+            b"original",
+            &json!({
+                "title": format!("{id}.jpg"), "fileType": 0,
+                "creationTime": 1_700_000_000_000_000i64, "hash": hash
+            }),
+            &json!({}),
+        );
+        file["info"] = json!({"fileSize": size});
+        file
+    };
+    let first = make(10, "same", 100);
+    let mut foreign = make(15, "same", 100);
+    foreign["ownerID"] = json!(42);
+    let one = page(
+        &mut server,
+        1,
+        0,
+        json!([
+            first,
+            make(11, "same", 100),
+            make(12, "single", 100),
+            make(13, "", 100),
+            make(14, "", 100),
+            foreign,
+            make(16, "unknown", 0),
+            make(17, "unknown", 0),
+            make(18, "image:video", 150),
+            make(19, "image:video", 200)
+        ]),
+        false,
+    )
+    .create();
+    let two = page(&mut server, 2, 0, json!([first]), false).create();
+    let result = home.json(&["photos", "duplicates", "--all"]);
+    assert_eq!(
+        result,
+        json!([
+            {"sizeBytes": 100, "files": [
+                {"id": "10", "name": "10.jpg", "albumIds": ["1", "2"]},
+                {"id": "11", "name": "11.jpg", "albumIds": ["1"]}
+            ]},
+            {"sizeBytes": 150, "files": [
+                {"id": "18", "name": "18.jpg", "albumIds": ["1"]},
+                {"id": "19", "name": "19.jpg", "albumIds": ["1"]}
+            ]}
+        ])
+    );
+    albums.assert();
+    one.assert();
+    two.assert();
+    drop(server);
+    assert_eq!(
+        home.json(&["photos", "duplicates", "--offline", "--all"]),
+        result
+    );
+    let limited = success(home.run(&[
+        "photos",
+        "duplicates",
+        "--offline",
+        "--limit",
+        "1",
+        "--json",
+    ]));
+    let groups: Value = serde_json::from_slice(&limited.stdout).unwrap();
+    assert_eq!(groups, json!([result[0]]));
+    assert!(String::from_utf8_lossy(&limited.stderr).contains("Showing first 1 results"));
+    let human = success(home.run(&["photos", "duplicates", "--offline"]));
+    let human = String::from_utf8_lossy(&human.stdout);
+    assert!(human.contains("10,11"));
+    assert!(human.contains("10.jpg, 11.jpg"));
+}
+
+#[test]
+fn duplicates_require_complete_metadata_and_report_empty_groups() {
+    let mut server = mockito::Server::new();
+    let home = TestHome::new();
+    home.seed(&server.url());
+    let key = Key::generate();
+    let albums = server
+        .mock("GET", "/collections/v2")
+        .match_query(mockito::Matcher::Any)
+        .with_body(json!({"collections": [collection(1, "First", &key)]}).to_string())
+        .expect_at_least(1)
+        .create();
+    success(home.run(&["photos", "album", "list"]));
+    assert!(
+        failure(&home.run(&["photos", "duplicates", "--offline"]))
+            .contains("have not finished syncing")
+    );
+    let empty = page(&mut server, 1, 0, json!([]), false).create();
+    assert_eq!(home.json(&["photos", "duplicates"]), json!([]));
+    assert_eq!(
+        success(home.run(&["photos", "duplicates", "--offline"])).stdout,
+        b"No duplicates.\n"
+    );
+    assert_eq!(
+        home.json(&["photos", "duplicates", "--remove", "--yes"]),
+        json!({"movedToTrash": []})
+    );
+    empty.assert();
+    albums.assert();
+}
+
+#[test]
+fn duplicates_removal_preserves_albums_and_stops_before_trash_on_addition_failure() {
+    use ente_core::crypto::Nonce;
+    for (fail_addition, fail_trash) in [(false, false), (true, false), (false, true)] {
+        let mut server = mockito::Server::new();
+        let home = TestHome::new();
+        home.seed(&server.url());
+        let first_key = Key::generate();
+        let second_key = Key::generate();
+        let initial_albums = server.mock("GET", "/collections/v2")
+            .match_query(mockito::Matcher::UrlEncoded("sinceTime".into(), "0".into()))
+            .with_body(json!({"collections": [collection(1, "First", &first_key), collection(2, "Second", &second_key)]}).to_string())
+            .create();
+        let make = |id, hash: &str, public: Value, key: &Key| {
+            let (mut file, _) = remote_file_with(
+                id,
+                key,
+                b"original",
+                &json!({
+                    "title": format!("{id}.jpg"), "fileType": 0,
+                    "creationTime": 1_700_000_000_000_000i64, "hash": hash
+                }),
+                &public,
+            );
+            file["info"] = json!({"fileSize": 100});
+            file
+        };
+        let plain = make(10, "same", json!({}), &first_key);
+        let edited = make(11, "same", json!({"editedName": "renamed.jpg"}), &first_key);
+        let retained = make(12, "same", json!({"caption": "keep me"}), &second_key);
+        let first = page(&mut server, 1, 0, json!([plain, edited]), false).create();
+        let second = page(
+            &mut server,
+            2,
+            0,
+            json!([
+                retained,
+                make(20, "other", json!({}), &second_key),
+                make(21, "other", json!({}), &second_key)
+            ]),
+            false,
+        )
+        .create();
+        let expected_key = secretbox::decrypt(
+            &b64::decode(retained["encryptedKey"].as_str().unwrap()).unwrap(),
+            &Nonce::try_from_slice(
+                &b64::decode(retained["keyDecryptionNonce"].as_str().unwrap()).unwrap(),
+            )
+            .unwrap(),
+            &second_key,
+        )
+        .unwrap();
+        let wrapped_first_key = Key::from_bytes(*first_key.as_bytes());
+        let added = Arc::new(AtomicUsize::new(0));
+        let check_added = Arc::clone(&added);
+        let addition = server
+            .mock("POST", "/collections/add-files")
+            .match_header("x-auth-token", "--8=")
+            .match_request(move |request| {
+                let body: Value =
+                    serde_json::from_str(&request.utf8_lossy_body().unwrap()).unwrap();
+                assert_eq!(body["collectionID"], 1);
+                assert_eq!(body["files"].as_array().unwrap().len(), 1);
+                let file = &body["files"][0];
+                assert_eq!(file["id"], 12);
+                let decrypted = secretbox::decrypt(
+                    &b64::decode(file["encryptedKey"].as_str().unwrap()).unwrap(),
+                    &Nonce::try_from_slice(
+                        &b64::decode(file["keyDecryptionNonce"].as_str().unwrap()).unwrap(),
+                    )
+                    .unwrap(),
+                    &wrapped_first_key,
+                )
+                .unwrap();
+                assert_eq!(decrypted, expected_key);
+                check_added.fetch_add(1, Ordering::SeqCst);
+                true
+            })
+            .with_status(if fail_addition { 400 } else { 200 })
+            .create();
+        let check_added = Arc::clone(&added);
+        let trash = server
+            .mock("POST", "/files/trash")
+            .match_header("x-auth-token", "--8=")
+            .match_body(mockito::Matcher::Json(json!({"items": [
+                {"fileID": 10, "collectionID": 1}, {"fileID": 11, "collectionID": 1}
+            ]})))
+            .match_request(move |_| {
+                assert!(check_added.load(Ordering::SeqCst) > 0);
+                true
+            })
+            .expect(if fail_addition { 0 } else { 1 })
+            .with_status(if fail_trash { 400 } else { 200 })
+            .create();
+        let mut changed_album = collection(1, "First", &first_key);
+        changed_album["updationTime"] = json!(30);
+        let refreshed = server
+            .mock("GET", "/collections/v2")
+            .match_query(mockito::Matcher::UrlEncoded(
+                "sinceTime".into(),
+                "20".into(),
+            ))
+            .with_body(json!({"collections": [changed_album]}).to_string())
+            .expect(if fail_addition || fail_trash { 0 } else { 1 })
+            .create();
+        let mut added_file = retained.clone();
+        let wrapped = secretbox::encrypt(
+            &secretbox::decrypt(
+                &b64::decode(retained["encryptedKey"].as_str().unwrap()).unwrap(),
+                &Nonce::try_from_slice(
+                    &b64::decode(retained["keyDecryptionNonce"].as_str().unwrap()).unwrap(),
+                )
+                .unwrap(),
+                &second_key,
+            )
+            .unwrap(),
+            &first_key,
+        );
+        added_file["encryptedKey"] = json!(b64::encode(&wrapped.encrypted_data));
+        added_file["keyDecryptionNonce"] = json!(b64::encode(wrapped.nonce.as_bytes()));
+        added_file["collectionID"] = json!(1);
+        added_file["updationTime"] = json!(30);
+        let mut deleted_plain = plain.clone();
+        deleted_plain["isDeleted"] = json!(true);
+        deleted_plain["updationTime"] = json!(30);
+        let mut deleted_edited = edited.clone();
+        deleted_edited["isDeleted"] = json!(true);
+        deleted_edited["updationTime"] = json!(30);
+        let refreshed_files = page(
+            &mut server,
+            1,
+            10,
+            json!([added_file, deleted_plain, deleted_edited]),
+            false,
+        )
+        .expect(if fail_addition || fail_trash { 0 } else { 1 })
+        .create();
+        let output = home.run(&[
+            "photos",
+            "duplicates",
+            "--remove",
+            "--limit",
+            "1",
+            "--yes",
+            "--no-input",
+            "--json",
+        ]);
+        if fail_addition || fail_trash {
+            assert!(failure(&output).contains("duplicate removal did not finish"));
+            assert!(output.stdout.is_empty());
+        } else {
+            let result: Value = serde_json::from_slice(&success(output).stdout).unwrap();
+            assert_eq!(result, json!({"movedToTrash": ["10", "11"]}));
+            assert_eq!(
+                home.json(&["photos", "file", "view", "12", "--offline"])["albumIds"],
+                json!(["1", "2"])
+            );
+            let remaining = home.json(&["photos", "duplicates", "--offline"]);
+            assert_eq!(remaining.as_array().unwrap().len(), 1);
+            assert_eq!(remaining[0]["files"][0]["id"], "20");
+        }
+        initial_albums.assert();
+        first.assert();
+        second.assert();
+        addition.assert();
+        trash.assert();
+        refreshed.assert();
+        refreshed_files.assert();
+    }
+}
+
+#[test]
+fn duplicates_removal_requires_online_access_and_explicit_confirmation() {
+    let home = TestHome::new();
+    assert!(
+        failure(&home.run(&["photos", "duplicates", "--remove", "--offline", "--yes"]))
+            .contains("requires network access")
+    );
+    assert!(
+        failure(&home.run(&["photos", "duplicates", "--remove", "--no-input"]))
+            .contains("supply --yes")
+    );
+    assert!(failure(&home.run(&["photos", "duplicates", "--yes"])).contains("--remove"));
+    assert_eq!(fs::read_dir(home.dir.path()).unwrap().count(), 0);
+}

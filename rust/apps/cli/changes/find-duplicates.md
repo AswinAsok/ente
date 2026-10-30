@@ -1,0 +1,1 @@
+- Added `photos duplicates` to find duplicate photos and videos using their stored hashes, with JSON and offline support. Use `--remove` to keep one copy in its owned albums and move extras to Trash.

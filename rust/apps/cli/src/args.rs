@@ -375,6 +375,28 @@ Examples:
   ente photos export ~/Pictures/Ente --album Holidays --account personal"
     )]
     Export(PhotosExportArgs),
+    #[command(
+        about = "Find duplicate photos and videos by their stored hashes",
+        after_long_help = "Refreshes metadata first; --offline uses previously synced data.
+Includes files you own in albums you own, including hidden albums.
+A file in several albums counts once; separate uploads with the same stored hash form a group.
+Files without a hash and groups without a known nonzero size are left out.
+Reports duplicates by default. --limit and --all count groups and also limit removal.
+--remove keeps one file per reported group and moves the rest to Trash; requires network access.
+Prefers a file with a caption, then an edited name or date, then the first file by ID.
+Adds the retained file to missing owned albums before moving any duplicates to Trash.
+Other copies' captions and edits are not merged. Batches can partially succeed; refresh online before retrying after an error.
+Removal requires confirmation; --yes approves it and --no-input only disables prompts.
+Removal JSON returns movedToTrash (array of file ID strings).
+Without --remove, JSON returns an array of groups: sizeBytes (integer), files (array of id, name, albumIds).
+IDs are strings; albumIds includes only albums you own.
+
+Examples:
+  ente photos duplicates
+  ente photos duplicates --all --json
+  ente photos duplicates --remove --all --yes"
+    )]
+    Duplicates(DuplicatesArgs),
     #[command(about = "Manage albums")]
     Album {
         #[command(subcommand)]
@@ -392,6 +414,19 @@ Examples:
         #[command(subcommand)]
         command: FileCommand,
     },
+}
+
+#[derive(Args)]
+pub struct DuplicatesArgs {
+    #[command(flatten)]
+    pub list: ListArgs,
+    #[arg(
+        long,
+        help = "Keep one file per reported group and move the rest to Trash"
+    )]
+    pub remove: bool,
+    #[arg(long, requires = "remove", help = "Approve removal without prompting")]
+    pub yes: bool,
 }
 
 #[derive(Args)]
