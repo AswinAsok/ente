@@ -14,7 +14,6 @@ pub struct DedupFile {
 }
 
 pub struct DuplicateItem {
-    /// Index into the files passed to `find_duplicates`.
     pub file_index: usize,
     pub collection_ids: Vec<i64>,
 }
@@ -24,7 +23,6 @@ pub struct DuplicateGroup {
     pub item_size: u64,
 }
 
-/// Find duplicate groups among the user's files in collections they own.
 pub fn find_duplicates(
     user_id: i64,
     collections: Vec<DedupCollection>,
@@ -81,8 +79,6 @@ pub struct DuplicateRemovalPlan {
     pub trash_ids: Vec<i64>,
 }
 
-/// Plan removal for selected duplicate groups without modifying any files.
-/// Apply the album additions successfully before trashing the duplicate files.
 pub fn plan_duplicate_removal(groups: Vec<Vec<Duplicate>>) -> DuplicateRemovalPlan {
     let groups: Vec<_> = groups
         .into_iter()
