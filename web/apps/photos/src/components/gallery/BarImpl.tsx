@@ -70,6 +70,13 @@ export interface GalleryBarPresentationProps {
 }
 
 export interface GalleryBarImplProps extends GalleryBarPresentationProps {
+    albumExpansion: {
+        value: AlbumFilter | undefined;
+        onChange: (
+            filter: AlbumFilter | undefined,
+            selectedFilter?: AlbumFilter,
+        ) => void;
+    };
     mode: GalleryBarMode;
     placesFiles?: EnteFile[];
     selectedPlace?: PlaceSelection;
@@ -90,6 +97,7 @@ export interface GalleryBarImplProps extends GalleryBarPresentationProps {
 }
 
 export const GalleryBarImpl: React.FC<GalleryBarImplProps> = ({
+    albumExpansion,
     mode,
     placesFiles,
     selectedPlace,
@@ -173,10 +181,8 @@ export const GalleryBarImpl: React.FC<GalleryBarImplProps> = ({
         [mode, people, isSearching, normalizedSearchQuery],
     );
     const [viewportHeight, setViewportHeight] = useState(0);
-    const [expandedAlbumFilter, setExpandedAlbumFilter] = useState<
-        AlbumFilter | undefined
-    >(albumFilter);
-    const lastAlbumFilter = useRef(albumFilter);
+    const { value: expandedAlbumFilter, onChange: setExpandedAlbumFilter } =
+        albumExpansion;
     const displayedAlbumFilter =
         isSearching &&
         expandedAlbumFilter !== undefined &&
@@ -195,12 +201,6 @@ export const GalleryBarImpl: React.FC<GalleryBarImplProps> = ({
         [mode, collectionSummaries, displayedAlbumFilter],
     );
 
-    useEffect(() => {
-        // Heading clicks already set expansion; sync other group navigation.
-        if (lastAlbumFilter.current == albumFilter) return;
-        lastAlbumFilter.current = albumFilter;
-        setExpandedAlbumFilter(albumFilter);
-    }, [albumFilter]);
     useEffect(() => {
         setPeopleSearchQuery("");
         setGroupExpanded(true);
@@ -371,11 +371,11 @@ export const GalleryBarImpl: React.FC<GalleryBarImplProps> = ({
                     }
                     aria-expanded={displayedAlbumFilter == filter.value}
                     onClick={() => {
-                        lastAlbumFilter.current = filter.value;
                         setExpandedAlbumFilter(
                             displayedAlbumFilter == filter.value
                                 ? undefined
                                 : filter.value,
+                            filter.value,
                         );
                         onShowAlbumOverview(filter.value);
                         mobileDrawerProps.onClose();
