@@ -8,8 +8,8 @@ import {
     GalleryBarImpl,
     type GalleryBarImplProps,
 } from "../src/components/gallery/BarImpl";
+import { LinksSidebar } from "../src/components/gallery/LinksSidebar";
 import { useAlbumNavigationData } from "../src/components/gallery/use-album-navigation-data";
-
 const viewport = vi.hoisted(() => ({ scrollToEnd: false }));
 
 vi.mock("react-window", async (importOriginal) => {
@@ -118,7 +118,6 @@ const renderSearch = (
         onAlbumSearchQueryChange: vi.fn(),
         onShowAlbumOverview: vi.fn(),
         onShowPeopleOverview: vi.fn(),
-        onShowLinksOverview: vi.fn(),
         onShowCollectionSummary: vi.fn(),
         onSelectCollectionID: vi.fn(),
         onCreateAlbum: vi.fn(),
@@ -134,11 +133,31 @@ const renderSearch = (
         });
         return (
             <ThemeProvider theme={photosTheme}>
-                <GalleryBarImpl
-                    {...props}
-                    {...data}
-                    collectionSummaries={data.sidebarCollectionSummaries}
-                />
+                {mode == "links" ? (
+                    <LinksSidebar
+                        collectionSummaries={data.sidebarCollectionSummaries}
+                        selectedLinkID={undefined}
+                        searchQuery={query}
+                        onSearchQueryChange={props.onAlbumSearchQueryChange}
+                        collectionsSortBy={props.collectionsSortBy}
+                        onChangeCollectionsSortBy={
+                            props.onChangeCollectionsSortBy
+                        }
+                        onSelectLink={props.onSelectCollectionID}
+                        onShowOverview={props.onShowAlbumOverview.bind(
+                            null,
+                            "ente",
+                        )}
+                        collapsed={props.collapsed}
+                        mobileDrawerProps={props.mobileDrawerProps}
+                    />
+                ) : (
+                    <GalleryBarImpl
+                        {...props}
+                        {...data}
+                        collectionSummaries={data.sidebarCollectionSummaries}
+                    />
+                )}
             </ThemeProvider>
         );
     };

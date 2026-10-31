@@ -44,7 +44,6 @@ import { splitByPredicate } from "ente-utils/array";
 import { includes } from "ente-utils/type-guards";
 import { t } from "i18next";
 import React, { useReducer } from "react";
-import { visibleQuickLinks } from "../../utils/quick-links";
 
 // TODO: Deprecated(?). Use GalleryView instead. Deprecated if it can be used in
 // all cases where the bar mode was in use.
@@ -52,7 +51,7 @@ export type GalleryBarMode =
     "albums" | "hidden-albums" | "archive-albums" | "people" | "links";
 
 type GalleryView =
-    | { type: "links"; selectedLinkID: number | undefined }
+    | { type: "links" }
     | { type: "album-overview"; albumFilter: AlbumFilter }
     | {
           type: "albums" | "hidden-albums" | "archive-albums";
@@ -157,8 +156,7 @@ type GalleryAction =
     | { type: "showAll" }
     | { type: "showHidden" }
     | { type: "showAlbumOverview"; albumFilter: AlbumFilter }
-    | { type: "showLinks"; collectionID?: number }
-    | { type: "selectLink"; collectionID: number }
+    | { type: "showLinks" }
     | { type: "showAlbums" }
     | { type: "showCollectionSummary"; collectionSummaryID: number | undefined }
     | { type: "showPeople" }
@@ -724,7 +722,6 @@ export const galleryReducer: React.Reducer<GalleryState, GalleryAction> = (
             });
 
         case "showLinks":
-        case "selectLink":
             return stateByUpdatingFilteredFiles({
                 ...state,
                 selectedCollectionSummaryID: undefined,
@@ -734,7 +731,7 @@ export const galleryReducer: React.Reducer<GalleryState, GalleryAction> = (
                 isRecomputingSearchResults: false,
                 pendingSearchSuggestions: [],
                 isInSearchMode: false,
-                view: { type: "links", selectedLinkID: action.collectionID },
+                view: { type: "links" },
             });
 
         case "showAlbumOverview":
@@ -1671,18 +1668,6 @@ const stateForUpdatedCollectionFiles = (
 };
 
 const stateByUpdatingFilteredFiles = (state: GalleryState) => {
-    if (state.view?.type == "links") {
-        const links = visibleQuickLinks(
-            state.collections,
-            state.user!.id,
-            state.hiddenCollectionIDs,
-        );
-        const previousLinkID = state.view.selectedLinkID;
-        const selectedLinkID = links.some(({ id }) => id == previousLinkID)
-            ? state.view.selectedLinkID
-            : undefined;
-        state = { ...state, view: { type: "links", selectedLinkID } };
-    }
     if (state.isInSearchMode) {
         const searchFiles = state.searchResults ?? state.filteredFiles;
         const visibleSearchFiles = suppressSharedFilesSavedByUser(

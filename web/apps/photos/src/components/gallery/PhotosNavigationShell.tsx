@@ -61,6 +61,7 @@ type GalleryNavigation = Omit<
     | "mode"
     | "onCreateAlbum"
     | "onSelectPerson"
+    | "customNavigation"
 > & { onRemotePull: (opts?: RemotePullOpts) => Promise<void> };
 
 type PhotosNavigationShellProps = SearchBarProps & {
@@ -85,6 +86,9 @@ export const PhotosNavigationShell: React.FC<
             isFirstLoad: boolean;
             alternateHeader: ReactNode;
             galleryNavigation: GalleryNavigation | undefined;
+            renderNavigation?: (
+                props: GalleryBarPresentationProps,
+            ) => ReactNode;
             collectionNameByID: Map<number, string>;
             onShowCleanupView: (view: "large-files" | "duplicates") => void;
             onAuthenticateUser: () => Promise<boolean>;
@@ -95,6 +99,7 @@ export const PhotosNavigationShell: React.FC<
     isFirstLoad,
     alternateHeader,
     galleryNavigation,
+    renderNavigation,
     collectionNameByID,
     onShowCleanupView,
     onAuthenticateUser,
@@ -208,6 +213,10 @@ export const PhotosNavigationShell: React.FC<
             mode={props.mode}
             collapsed={!panelOpen}
             mobileDrawerProps={mobileDrawerProps}
+            customNavigation={renderNavigation?.({
+                collapsed: !panelOpen,
+                mobileDrawerProps,
+            })}
             onCreateAlbum={openAlbumCreation}
             onSelectCollectionID={selectCollection}
             onSelectPlace={(place) => {

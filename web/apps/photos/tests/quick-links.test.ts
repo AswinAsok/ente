@@ -3,11 +3,15 @@ import { CollectionSubType, type Collection } from "ente-media/collection";
 import { ItemVisibility } from "ente-media/file-metadata";
 import { describe, expect, test } from "vitest";
 import {
+    initialLinksSectionState,
+    linksSectionReducer,
+    type LinksSectionState,
+} from "../src/components/gallery/links-section-state";
+import {
     galleryReducer,
     initialGalleryState,
 } from "../src/components/gallery/reducer";
 import { visibleQuickLinks } from "../src/utils/quick-links";
-
 const link = (id: number, overrides: Partial<Collection> = {}): Collection => ({
     id,
     name: `Link ${id}`,
@@ -65,7 +69,25 @@ describe("quick link membership", () => {
     });
 });
 
-describe("Links navigation", () => {
+const selected = (collectionID: number) =>
+    linksSectionReducer(initialLinksSectionState, {
+        type: "selectLink",
+        collectionID,
+    });
+const reconcile = (
+    section: LinksSectionState,
+    state: ReturnType<typeof mounted>,
+) =>
+    linksSectionReducer(section, {
+        type: "reconcile",
+        links: visibleQuickLinks(
+            state.collections,
+            state.user!.id,
+            state.hiddenCollectionIDs,
+        ),
+    });
+
+describe("Links gallery navigation", () => {
     test("opens the overview and clears stale photo search state", () => {
         const state = galleryReducer(
             {
@@ -76,103 +98,13 @@ describe("Links navigation", () => {
             },
             { type: "showLinks" },
         );
-        expect(state.view).toEqual({
-            type: "links",
-            selectedLinkID: undefined,
-        });
+        expect(state.view).toEqual({ type: "links" });
         expect(state.selectedCollectionSummaryID).toBeUndefined();
         expect(state.filteredFiles).toEqual([]);
         expect(state.searchResults).toBeUndefined();
         expect(state.isInSearchMode).toBe(false);
         expect(state.isRecomputingSearchResults).toBe(false);
     });
-
-    test("returns to the overview when the Links group is selected again", () => {
-        let state = galleryReducer(mounted(), {
-            type: "selectLink",
-            collectionID: 1,
-        });
-        state = galleryReducer(state, { type: "showLinks" });
-        state = galleryReducer(state, {
-            type: "setCollections",
-            collections: [link(1), link(2), link(3)],
-        });
-        expect(state.view).toEqual({
-            type: "links",
-            selectedLinkID: undefined,
-        });
-    });
-
-    test("preserves selection when the list refreshes", () => {
-        let state = galleryReducer(mounted(), {
-            type: "selectLink",
-            collectionID: 1,
-        });
-        state = galleryReducer(state, {
-            type: "setCollections",
-            collections: [link(1, { name: "Updated" }), link(2), link(3)],
-        });
-        expect(state.view).toEqual({ type: "links", selectedLinkID: 1 });
-        expect(state.normalCollectionSummaries.get(1)?.name).toBe("Updated");
-    });
-
-    test.each(["removed", "hidden", "unlinked", "shared"])(
-        "reconciles a selected link that becomes %s",
-        (change) => {
-            let state = galleryReducer(mounted(), {
-                type: "selectLink",
-                collectionID: 2,
-            });
-            const updated = link(2);
-            if (change == "hidden")
-                updated.magicMetadata!.data.visibility = ItemVisibility.hidden;
-            if (change == "unlinked") updated.publicURLs = [];
-            if (change == "shared") updated.sharees = [{ id: 2 }];
-            state = galleryReducer(state, {
-                type: "setCollections",
-                collections:
-                    change == "removed" ? [link(1)] : [link(1), updated],
-            });
-            expect(state.view).toEqual({
-                type: "links",
-                selectedLinkID: undefined,
-            });
-        },
-    );
-
-    test("keeps an empty Links view after removing the final link", () => {
-        let state = galleryReducer(mounted([link(1)]), { type: "showLinks" });
-        state = galleryReducer(state, {
-            type: "setCollections",
-            collections: [],
-        });
-        expect(state.view).toEqual({
-            type: "links",
-            selectedLinkID: undefined,
-        });
-        state = galleryReducer(state, {
-            type: "setCollections",
-            collections: [link(3)],
-        });
-        expect(state.view).toEqual({
-            type: "links",
-            selectedLinkID: undefined,
-        });
-    });
-
-    test("does not open a hidden link by an explicit ID", () => {
-        const hidden = link(3);
-        hidden.magicMetadata!.data.visibility = ItemVisibility.hidden;
-        const state = galleryReducer(mounted([link(1), hidden]), {
-            type: "selectLink",
-            collectionID: 3,
-        });
-        expect(state.view).toEqual({
-            type: "links",
-            selectedLinkID: undefined,
-        });
-    });
-
     test("supports returning to Home and People", () => {
         let state = galleryReducer(mounted(), { type: "showLinks" });
         state = galleryReducer(state, { type: "showAll" });
@@ -180,5 +112,85 @@ describe("Links navigation", () => {
         state = galleryReducer(state, { type: "showLinks" });
         state = galleryReducer(state, { type: "showPeople" });
         expect(state.view?.type).toBe("people");
+    });
+});
+
+describe("Links section selection", () => {
+    test("returns to the overview when the Links group is selected again", () => {
+        let section = linksSectionReducer(selected(1), {
+            type: "showOverview",
+        });
+        section = reconcile(section, mounted([link(1), link(2), link(3)]));
+        expect(section.selectedLinkID).toBeUndefined();
+    });
+    test("preserves selection when the list refreshes", () => {
+        const state = galleryReducer(mounted(), {
+            type: "setCollections",
+            collections: [link(1, { name: "Updated" }), link(2), link(3)],
+        });
+        const section = reconcile(selected(1), state);
+        expect(section.selectedLinkID).toBe(1);
+        expect(state.normalCollectionSummaries.get(1)?.name).toBe("Updated");
+    });
+    test.each(["removed", "hidden", "unlinked", "shared"])(
+        "reconciles a selected link that becomes %s",
+        (change) => {
+            const updated = link(2);
+            if (change === "hidden")
+                updated.magicMetadata!.data.visibility = ItemVisibility.hidden;
+            if (change === "unlinked") updated.publicURLs = [];
+            if (change === "shared") updated.sharees = [{ id: 2 }];
+            const state = galleryReducer(mounted(), {
+                type: "setCollections",
+                collections:
+                    change === "removed" ? [link(1)] : [link(1), updated],
+            });
+            const section = reconcile(selected(2), state);
+            expect(section.selectedLinkID).toBeUndefined();
+            expect(
+                reconcile(section, mounted()).selectedLinkID,
+            ).toBeUndefined();
+        },
+    );
+    test("keeps an empty Links view after removing the final link", () => {
+        let state = galleryReducer(mounted([link(1)]), { type: "showLinks" });
+        state = galleryReducer(state, {
+            type: "setCollections",
+            collections: [],
+        });
+        let section = reconcile(selected(1), state);
+        expect(state.view).toEqual({ type: "links" });
+        expect(section.selectedLinkID).toBeUndefined();
+        state = galleryReducer(state, {
+            type: "setCollections",
+            collections: [link(3)],
+        });
+        section = reconcile(section, state);
+        expect(state.view).toEqual({ type: "links" });
+        expect(section.selectedLinkID).toBeUndefined();
+    });
+    test("does not open a hidden link by an explicit ID", () => {
+        const hidden = link(3);
+        hidden.magicMetadata!.data.visibility = ItemVisibility.hidden;
+        expect(
+            reconcile(selected(3), mounted([link(1), hidden])).selectedLinkID,
+        ).toBeUndefined();
+    });
+    test("search filtering does not clear selection and the overview preserves the query", () => {
+        const section = linksSectionReducer(selected(1), {
+            type: "search",
+            query: "missing",
+        });
+        expect(reconcile(section, mounted())).toEqual({
+            selectedLinkID: 1,
+            searchQuery: "missing",
+        });
+        expect(linksSectionReducer(section, { type: "showOverview" })).toEqual({
+            selectedLinkID: undefined,
+            searchQuery: "missing",
+        });
+        expect(linksSectionReducer(section, { type: "reset" })).toEqual(
+            initialLinksSectionState,
+        );
     });
 });

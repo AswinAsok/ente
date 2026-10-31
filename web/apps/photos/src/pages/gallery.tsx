@@ -33,13 +33,13 @@ import {
 import { AlbumsOverview } from "@/components/gallery/AlbumsOverview";
 import { DuplicatesView } from "@/components/gallery/DuplicatesView";
 import { LargeFilesView } from "@/components/gallery/LargeFilesView";
+import { useLinksSection } from "@/components/gallery/LinksSection";
 import { PeopleOverview } from "@/components/gallery/PeopleOverview";
 import {
     PhotosNavigationShell,
     type PhotosNavigationShellHandle,
 } from "@/components/gallery/PhotosNavigationShell";
 import type { PlaceSelection } from "@/components/gallery/PlacesList";
-import { PublicLinkDetails } from "@/components/gallery/PublicLinkDetails";
 import {
     albumShortcutCollectionID,
     findCollectionCreatingIfNeeded,
@@ -54,6 +54,7 @@ import {
     type GalleryBarMode,
 } from "@/components/gallery/reducer";
 import { useAlbumNavigationData } from "@/components/gallery/use-album-navigation-data";
+import { useCollectionsSortBy } from "@/components/gallery/use-collections-sort-by";
 import {
     notifyOthersFilesDialogAttributes,
     notifyUnsupportedSharedFavoritesDialogAttributes,
@@ -68,7 +69,6 @@ import {
 } from "@/utils/album-filters";
 import { externalLink } from "@/utils/link";
 import { sortPeople, type PeopleSortBy } from "@/utils/people-sort";
-import { visibleQuickLinks } from "@/utils/quick-links";
 import { CheckmarkCircle02Icon } from "@hugeicons/core-free-icons";
 import { Typography } from "@mui/material";
 import { sessionExpiredDialogAttributes } from "ente-accounts/components/utils/dialog";
@@ -374,59 +374,32 @@ const Page: React.FC = () => {
         state.view?.type == "links"
             ? undefined
             : state.view?.activeCollectionSummary;
-    const selectedLinkID =
-        state.view?.type == "links" ? state.view.selectedLinkID : undefined;
+    const { collectionsSortBy, onChangeCollectionsSortBy } =
+        useCollectionsSortBy();
+    const links = useLinksSection({
+        isLinksView: state.view?.type == "links",
+        user,
+        collections: state.collections,
+        collectionSummaries: normalCollectionSummaries,
+        collectionFiles: state.collectionFiles,
+        hiddenCollectionIDs,
+        hiddenFileIDs,
+        tempDeletedFileIDs,
+        tempHiddenFileIDs,
+        uncategorizedCollectionSummaryID:
+            state.uncategorizedCollectionSummaryID,
+        collectionsSortBy,
+        onChangeCollectionsSortBy,
+        onSelectLink: () => dispatch({ type: "showLinks" }),
+    });
     const galleryBarActiveCollectionID =
-        barMode == "links" ? selectedLinkID : activeCollectionID;
+        barMode == "links" ? links.selectedLinkID : activeCollectionID;
     const isActiveCollectionDownloadInProgress = useCallback(() => {
         const group = saveGroups.find(
             (g) => g.collectionSummaryID === galleryBarActiveCollectionID,
         );
         return !!group && !isSaveComplete(group) && !isSaveCancelled(group);
     }, [saveGroups, galleryBarActiveCollectionID]);
-    const quickLinks = useMemo(
-        () =>
-            visibleQuickLinks(
-                state.collections,
-                user?.id ?? 0,
-                state.hiddenCollectionIDs,
-            ),
-        [state.collections, user?.id, state.hiddenCollectionIDs],
-    );
-    const linkSummaries = useMemo(
-        () =>
-            new Map(
-                quickLinks.flatMap((collection) => {
-                    const summary = normalCollectionSummaries.get(
-                        collection.id,
-                    );
-                    return summary ? [[collection.id, summary] as const] : [];
-                }),
-            ),
-        [quickLinks, normalCollectionSummaries],
-    );
-    const selectedLink = quickLinks.find(({ id }) => id === selectedLinkID);
-    const selectedLinkSummary =
-        selectedLink && linkSummaries.get(selectedLink.id);
-    const selectedLinkFiles = useMemo(
-        () =>
-            selectedLinkID === undefined
-                ? []
-                : state.collectionFiles.filter(
-                      ({ id, collectionID }) =>
-                          collectionID === selectedLinkID &&
-                          !hiddenFileIDs.has(id) &&
-                          !tempDeletedFileIDs.has(id) &&
-                          !tempHiddenFileIDs.has(id),
-                  ),
-        [
-            selectedLinkID,
-            state.collectionFiles,
-            hiddenFileIDs,
-            tempDeletedFileIDs,
-            tempHiddenFileIDs,
-        ],
-    );
     const activePerson =
         state.view?.type == "people" ? state.view.activePerson : undefined;
     const people =
@@ -516,7 +489,7 @@ const Page: React.FC = () => {
 
     const barCollectionSummaries =
         barMode == "links"
-            ? linkSummaries
+            ? links.collectionSummaries
             : barMode == "hidden-albums"
               ? state.hiddenCollectionSummaries
               : barMode == "archive-albums"
@@ -531,8 +504,6 @@ const Page: React.FC = () => {
         sidebarCollectionSummaries,
         overviewAlbums,
         visibleAlbumFilters: sidebarAlbumFilters,
-        collectionsSortBy,
-        onChangeCollectionsSortBy,
     } = useAlbumNavigationData({
         mode: barMode,
         collectionSummaries: barCollectionSummaries,
@@ -540,6 +511,7 @@ const Page: React.FC = () => {
             state.uncategorizedCollectionSummaryID,
         albumFilter,
         albumSearchQuery,
+        collectionsSortBy,
     });
 
     useEffect(() => {
@@ -1562,6 +1534,7 @@ const Page: React.FC = () => {
         if (mode == "links") {
             setCleanupView(undefined);
             clearSelection();
+            links.showOverview();
             dispatch({ type: "showLinks" });
             return true;
         }
@@ -2023,8 +1996,7 @@ const Page: React.FC = () => {
 
     const selectGalleryCollection =
         barMode == "links"
-            ? (collectionID: number) =>
-                  dispatch({ type: "selectLink", collectionID })
+            ? links.selectLink
             : handleShowCollectionSummaryWithID;
 
     const collectionMap = activeCollectionSummary && (
@@ -2153,8 +2125,6 @@ const Page: React.FC = () => {
                                   onAlbumSearchQueryChange: setAlbumSearchQuery,
                                   onShowAlbumOverview: handleShowAlbumOverview,
                                   onShowPeopleOverview: handleShowPeople,
-                                  onShowLinksOverview: () =>
-                                      handleChangeBarMode("links"),
                                   collectionSummaries:
                                       sidebarCollectionSummaries,
                                   visibleAlbumFilters: sidebarAlbumFilters,
@@ -2168,6 +2138,14 @@ const Page: React.FC = () => {
                                   onChangePeopleSortBy: setPeopleSortBy,
                                   people: sortedPeople,
                               }
+                    }
+                    renderNavigation={
+                        barMode == "links"
+                            ? (props) =>
+                                  links.renderSidebar(props, () =>
+                                      handleChangeBarMode("links"),
+                                  )
+                            : undefined
                     }
                     alternateHeader={
                         showSelectionBar ? (
@@ -2256,32 +2234,11 @@ const Page: React.FC = () => {
                     ) : cleanupView === "large-files" ? (
                         <LargeFilesView onRemoteFilesPull={remoteFilesPull} />
                     ) : !isInSearchMode && barMode == "links" ? (
-                        selectedLink ? (
-                            <PublicLinkDetails
-                                key={selectedLink.id}
-                                collection={selectedLink}
-                                fileCount={
-                                    selectedLinkSummary?.fileCount ??
-                                    selectedLinkFiles.length
-                                }
-                                files={selectedLinkFiles}
-                                user={user}
-                                setBlockingLoad={setBlockingLoad}
-                                onRemotePull={remotePull}
-                                coverFile={selectedLinkSummary?.coverFile}
-                            />
-                        ) : (
-                            <AlbumsOverview
-                                albums={sidebarCollectionSummaries}
-                                title={t("links")}
-                                filter="links"
-                                searchQuery={albumSearchQuery}
-                                sortBy={collectionsSortBy}
-                                onSelectAlbum={selectGalleryCollection}
-                                onCreateAlbum={showAlbumNameInput}
-                                onRemotePull={remotePull}
-                            />
-                        )
+                        links.renderContent({
+                            setBlockingLoad,
+                            onRemotePull: remotePull,
+                            onCreateAlbum: showAlbumNameInput,
+                        })
                     ) : !isInSearchMode &&
                       !isFirstLoad &&
                       !state.collectionFiles.length &&

@@ -36,6 +36,7 @@ const navigationData = (
             uncategorizedCollectionSummaryID: 99,
             albumFilter: "ente",
             albumSearchQuery: "",
+            collectionsSortBy: "updation-time-desc",
             ...options,
         });
         return null;
