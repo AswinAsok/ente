@@ -1,4 +1,3 @@
-import { CreateAlbumDialog } from "@/components/collections/CreateAlbumDialog";
 import { SearchBar, type SearchBarProps } from "@/components/SearchBar";
 import { Sidebar } from "@/components/sidebar/Sidebar";
 import { useIsOffline } from "@/components/utils/use-is-offline";
@@ -41,21 +40,10 @@ import {
     type ReactNode,
 } from "react";
 
-import type { RemotePullOpts } from ".";
-import {
-    GalleryBarImpl,
-    type GalleryBarImplProps,
-    type GalleryBarPresentationProps,
-} from "./BarImpl";
-import { GallerySectionLayout } from "./GallerySectionLayout";
+import type { GallerySectionPresentation } from "./GallerySectionLayout";
 import { NavigationSlide } from "./NavigationSlide";
 import { usePhotosNavigation } from "./PhotosNavigationContext";
 import type { GalleryBarMode } from "./reducer";
-
-type GalleryNavigation = Omit<
-    GalleryBarImplProps,
-    keyof GalleryBarPresentationProps | "mode" | "onCreateAlbum"
-> & { onRemotePull: (opts?: RemotePullOpts) => Promise<void> };
 
 type PhotosNavigationShellProps = SearchBarProps & {
     onSidebar: () => void;
@@ -70,27 +58,28 @@ export interface PhotosNavigationShellHandle {
 }
 
 export const PhotosNavigationShell: React.FC<
-    React.PropsWithChildren<
-        Omit<PhotosNavigationShellProps, "isSettingsOpen" | "onSidebar"> & {
-            ref?: React.Ref<PhotosNavigationShellHandle>;
-            isFirstLoad: boolean;
-            alternateHeader: ReactNode;
-            galleryNavigation: GalleryNavigation | undefined;
-            collectionNameByID: Map<number, string>;
-            onAuthenticateUser: () => Promise<boolean>;
-        }
-    >
+    Omit<PhotosNavigationShellProps, "isSettingsOpen" | "onSidebar"> & {
+        ref?: React.Ref<PhotosNavigationShellHandle>;
+        isFirstLoad: boolean;
+        alternateHeader: ReactNode;
+        navigationAvailable: boolean;
+        activeCollectionID: number | undefined;
+        children: (presentation: GallerySectionPresentation) => ReactNode;
+        collectionNameByID: Map<number, string>;
+        onAuthenticateUser: () => Promise<boolean>;
+    }
 > = ({
     ref,
     isFirstLoad,
     alternateHeader,
-    galleryNavigation,
+    navigationAvailable: hasNavigation,
+    activeCollectionID,
     collectionNameByID,
     onAuthenticateUser,
     children,
     ...props
 }) => {
-    const { changeMode, showLibraryMap, selectCollection, showCleanupView } =
+    const { changeMode, showLibraryMap, showCleanupView } =
         usePhotosNavigation();
     const { show: showSidebar, props: sidebarVisibilityProps } =
         useModalVisibility();
@@ -113,7 +102,7 @@ export const PhotosNavigationShell: React.FC<
     const reduceMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
     const [navigationCollapsed, setNavigationCollapsed] = useState(false);
     const mobile = useMediaQuery(useTheme().breakpoints.down("md"));
-    const navigationAvailable = !!galleryNavigation && !props.isInSearchMode;
+    const navigationAvailable = hasNavigation && !props.isInSearchMode;
     const panelOpen = navigationAvailable && !navigationCollapsed;
     const { show: showMobileNavigation, props: mobileDrawerProps } =
         useModalVisibility();
@@ -127,20 +116,6 @@ export const PhotosNavigationShell: React.FC<
         } else {
             setNavigationCollapsed((collapsed) => !collapsed);
         }
-    };
-    const selectCreatedCollection = useCallback(
-        (id: number) => {
-            if (galleryNavigation) selectCollection(id);
-            closeMobileNavigation();
-        },
-        [galleryNavigation, selectCollection, closeMobileNavigation],
-    );
-    const { show: showAlbumNameInput, props: albumNameInputVisibilityProps } =
-        useModalVisibility();
-    const [createInHiddenSection, setCreateInHiddenSection] = useState(false);
-    const openAlbumCreation = () => {
-        setCreateInHiddenSection(props.mode == "hidden-albums");
-        showAlbumNameInput();
     };
     useEffect(() => {
         setNavigationCollapsed(false);
@@ -157,15 +132,14 @@ export const PhotosNavigationShell: React.FC<
         const reopeningSection =
             mobile &&
             mode == "albums" &&
-            galleryNavigation &&
+            hasNavigation &&
             !props.isInSearchMode &&
             (props.mode == "hidden-albums" || props.mode == "archive-albums");
         if (
-            galleryNavigation &&
+            hasNavigation &&
             !props.isInSearchMode &&
             ((props.mode == mode &&
-                galleryNavigation.activeCollectionID !=
-                    PseudoCollectionID.all) ||
+                activeCollectionID != PseudoCollectionID.all) ||
                 reopeningSection)
         ) {
             if (mobile) {
@@ -180,15 +154,6 @@ export const PhotosNavigationShell: React.FC<
         setNavigationCollapsed(false);
         if (mobile) showMobileNavigation();
     };
-    const galleryBar = galleryNavigation && (
-        <GalleryBarImpl
-            {...galleryNavigation}
-            mode={props.mode}
-            collapsed={!panelOpen}
-            mobileDrawerProps={mobileDrawerProps}
-            onCreateAlbum={openAlbumCreation}
-        />
-    );
     return (
         <Stack
             sx={(theme) => ({
@@ -271,14 +236,13 @@ export const PhotosNavigationShell: React.FC<
                                     !props.isMapSelected &&
                                     props.mode == "albums" &&
                                     !props.isInSearchMode &&
-                                    galleryNavigation?.activeCollectionID ==
-                                        PseudoCollectionID.all
+                                    activeCollectionID == PseudoCollectionID.all
                                 }
                                 onChangeMode={handleChangeMode}
                                 opensDialog={mobile}
                                 navigationOpen={
                                     !props.isMapSelected &&
-                                    !!galleryNavigation &&
+                                    hasNavigation &&
                                     (mobile
                                         ? mobileDrawerProps.open
                                         : !navigationCollapsed)
@@ -287,28 +251,14 @@ export const PhotosNavigationShell: React.FC<
                         )}
                     </Box>
                 </NavigationSlide>
-                <GallerySectionLayout
-                    presentation={{
-                        collapsed: !panelOpen,
-                        mobile,
-                        mobileDrawerProps,
-                        reduceMotion,
-                        isFirstLoad,
-                        isOffline,
-                    }}
-                    navigation={navigationAvailable ? galleryBar : undefined}
-                    fullBleed={props.isMapView}
-                >
-                    {children}
-                </GallerySectionLayout>
-                {navigationAvailable && (
-                    <CreateAlbumDialog
-                        {...albumNameInputVisibilityProps}
-                        isHidden={createInHiddenSection}
-                        onRemotePull={galleryNavigation.onRemotePull}
-                        onSelectCollectionID={selectCreatedCollection}
-                    />
-                )}
+                {children({
+                    collapsed: !panelOpen,
+                    mobile,
+                    mobileDrawerProps,
+                    reduceMotion,
+                    isFirstLoad,
+                    isOffline,
+                })}
             </Stack>
             <Sidebar
                 {...sidebarVisibilityProps}
