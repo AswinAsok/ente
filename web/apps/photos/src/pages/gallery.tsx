@@ -1,21 +1,17 @@
+import { useCollectionOperations } from "@/components/gallery/hooks/use-collection-operations";
+import { useFileContextActions } from "@/components/gallery/hooks/use-file-context-actions";
+import { useFileMutations } from "@/components/gallery/hooks/use-file-mutations";
+import { useGallerySelection } from "@/components/gallery/hooks/use-gallery-selection";
+import { useSelectedFileOperations } from "@/components/gallery/hooks/use-selected-file-operations";
 // TODO: Audit this file (the code here is mostly fine, but needs revisiting
 // the file it depends on have been audited and their interfaces fixed).
 /* eslint-disable react-hooks/exhaustive-deps */
 import { AuthenticateUser } from "@/components/AuthenticateUser";
-import {
-    CollectionSelector,
-    type CollectionSelectorAttributes,
-} from "@/components/CollectionSelector";
 import { DesktopWhatsNew } from "@/components/DesktopWhatsNew";
 import type { FileListHeaderOrFooter } from "@/components/FileList";
 import { FileListWithViewer } from "@/components/FileListWithViewer";
-import { FixCreationTime } from "@/components/FixCreationTime";
 import { QuickLinkCreatedNotification } from "@/components/QuickLinkCreatedNotification";
-import {
-    SelectedFileOptions,
-    type CollectionOp,
-    type FileOp,
-} from "@/components/SelectedFileOptions";
+import { SelectedFileOptions } from "@/components/SelectedFileOptions";
 import { Upload } from "@/components/Upload";
 import { AlbumSlideshow } from "@/components/collections/AlbumSlideshow";
 import { CollectionMap } from "@/components/collections/CollectionMap";
@@ -46,8 +42,6 @@ import {
 import type { PlaceSelection } from "@/components/gallery/PlacesList";
 import {
     albumShortcutCollectionID,
-    findCollectionCreatingIfNeeded,
-    performCollectionOp,
     showCollectionSummaryWithAuthentication,
 } from "@/components/gallery/helpers";
 import { useGalleryAuthentication } from "@/components/gallery/hooks/use-gallery-authentication";
@@ -57,28 +51,16 @@ import { useGallerySlideshow } from "@/components/gallery/hooks/use-gallery-slid
 import type { GalleryBarMode } from "@/components/gallery/reducer";
 import { useAlbumNavigationData } from "@/components/gallery/use-album-navigation-data";
 import {
-    notifyOthersFilesDialogAttributes,
-    notifyUnsupportedSharedFavoritesDialogAttributes,
-    trashFilesDialogAttributes,
-} from "@/components/utils/dialog-attributes";
-import {
     albumFilters,
     visibleAlbumFilters,
     type AlbumFilter,
 } from "@/utils/album-filters";
 import { externalLink } from "@/utils/link";
 import { sortPeople } from "@/utils/people-sort";
-import { CheckmarkCircle02Icon } from "@hugeicons/core-free-icons";
 import { Typography } from "@mui/material";
-import { Notification } from "ente-base/components/Notification";
-import { SingleInputDialog } from "ente-base/components/SingleInputDialog";
 import { TranslucentLoadingOverlay } from "ente-base/components/loaders";
-import { errorDialogAttributes } from "ente-base/components/utils/dialog";
 import { useModalVisibility } from "ente-base/components/utils/modal";
 import { useBaseContext } from "ente-base/context";
-import { isHTTPErrorWithStatus } from "ente-base/http";
-import log from "ente-base/log";
-import type { Location } from "ente-base/types";
 import { DownloadStatusNotifications } from "ente-gallery/components/DownloadStatusNotifications";
 import { FullScreenDropZone } from "ente-gallery/components/FullScreenDropZone";
 import type { UploadTypeSelectorIntent } from "ente-gallery/components/Upload";
@@ -88,25 +70,12 @@ import {
     useSaveGroups,
 } from "ente-gallery/components/utils/save-groups";
 import type { FileViewerInitialSidebar } from "ente-gallery/components/viewer/FileViewer";
-import type { Collection } from "ente-media/collection";
-import type { EnteFile } from "ente-media/file";
-import { ItemVisibility, metadataHash } from "ente-media/file-metadata";
-import { AssignPersonDialog } from "ente-new/photos/components/AssignPersonDialog";
-import { EditLocationDialog } from "ente-new/photos/components/EditLocationDialog";
+import { ItemVisibility } from "ente-media/file-metadata";
 import {
     useMLStatusSnapshot,
     useSettingsSnapshot,
 } from "ente-new/photos/components/utils/use-snapshot";
 import {
-    addToCollection,
-    addToFavoritesCollection,
-    canAddFilesToCollection,
-    createAlbum,
-    createHiddenAlbum,
-    createPublicURL,
-    createQuickLinkCollection,
-    removeFromCollection,
-    removeFromFavoritesCollection,
     renameCollection,
     updateCollectionDetails,
 } from "ente-new/photos/services/collection";
@@ -114,27 +83,10 @@ import {
     haveOnlySystemCollections,
     PseudoCollectionID,
 } from "ente-new/photos/services/collection-summary";
-import {
-    updateFilesLocation,
-    updateFilesVisibility,
-} from "ente-new/photos/services/file";
-import {
-    addManualFileAssignmentsToPerson,
-    isMLEnabled,
-} from "ente-new/photos/services/ml";
+import { isMLEnabled } from "ente-new/photos/services/ml";
 
 import { uploadManager } from "@/services/upload-manager";
-import {
-    selectedFavoriteCount as countSelectedFavorites,
-    getSelectedFiles,
-    performFileOp,
-    type SelectedState,
-} from "@/utils/file";
-import type { FileContextAction } from "@/utils/file-actions";
-import {
-    quickLinkNameForFiles,
-    resolveQuickLinkURL,
-} from "ente-gallery/utils/quick-link";
+import { getSelectedFiles, type SelectedState } from "@/utils/file";
 import { filterSearchableFiles } from "ente-new/photos/services/search";
 import type { SearchOption } from "ente-new/photos/services/search/types";
 import { updateMapEnabled } from "ente-new/photos/services/settings";
@@ -146,13 +98,9 @@ import type { FileWithPath } from "react-dropzone";
 import { Trans } from "react-i18next";
 
 const Page: React.FC = () => {
-    const { showMiniDialog, onGenericError } = useBaseContext();
-    const {
-        showLoadingBar,
-        hideLoadingBar,
-        watchFolderView,
-        showNotification,
-    } = usePhotosAppContext();
+    const { onGenericError } = useBaseContext();
+    const { showLoadingBar, hideLoadingBar, watchFolderView } =
+        usePhotosAppContext();
 
     const {
         state,
@@ -169,14 +117,7 @@ const Page: React.FC = () => {
     >();
     const isCleanupViewOpen = cleanupView !== undefined;
     const [isContextMenuOpen, setIsContextMenuOpen] = useState(false);
-    const [suppressContextSelectionBar, setSuppressContextSelectionBar] =
-        useState(false);
-    const [selected, setSelected] = useState<SelectedState>({
-        ownCount: 0,
-        count: 0,
-        collectionID: 0,
-        context: { mode: "albums", collectionID: PseudoCollectionID.all },
-    });
+    const { selected, setSelected, clearSelection } = useGallerySelection();
     const [blockingLoad, setBlockingLoad] = useState(false);
     const [shouldDisableDropzone, setShouldDisableDropzone] = useState(false);
     const [dragAndDropFiles, setDragAndDropFiles] = useState<FileWithPath[]>(
@@ -188,50 +129,17 @@ const Page: React.FC = () => {
         sidebar?: FileViewerInitialSidebar;
         commentID?: string;
     }>();
-
-    const pendingSingleFileAdd = useRef<
-        { file: EnteFile; sourceCollectionSummaryID?: number } | undefined
-    >(undefined);
     const [uploadTypeSelectorView, setUploadTypeSelectorView] = useState(false);
     const [uploadTypeSelectorIntent, setUploadTypeSelectorIntent] =
         useState<UploadTypeSelectorIntent>("upload");
-
-    const [fixCreationTimeFiles, setFixCreationTimeFiles] = useState<
-        EnteFile[]
-    >([]);
     const [fileListHeader, setFileListHeader] = useState<
         FileListHeaderOrFooter | undefined
     >(undefined);
 
-    const [openCollectionSelector, setOpenCollectionSelector] = useState(false);
-    const [collectionSelectorAttributes, setCollectionSelectorAttributes] =
-        useState<CollectionSelectorAttributes | undefined>();
-
-    const { customDomain, mapEnabled } = useSettingsSnapshot();
+    const { mapEnabled } = useSettingsSnapshot();
     const mlStatus = useMLStatusSnapshot();
 
-    const {
-        show: showContextMenuAssignPerson,
-        props: contextMenuAssignPersonProps,
-    } = useModalVisibility();
-
-    const namedPeople = useMemo(
-        () =>
-            (peopleState?.visiblePeople ?? []).filter(
-                (p) => p.type == "cgroup" && !!p.name,
-            ),
-        [peopleState],
-    );
-    const showAddPersonAction = useMemo(
-        () => isMLEnabled() && namedPeople.length > 0,
-        [namedPeople],
-    );
-
     const { saveGroups, onAddSaveGroup, onRemoveSaveGroup } = useSaveGroups();
-    const [postCreateAlbumOp, setPostCreateAlbumOp] = useState<
-        CollectionOp | undefined
-    >(undefined);
-    const postCreateAlbumHidden = useRef(false);
     const navigationRef = useRef<PhotosNavigationShellHandle>(null);
 
     const lastAuthenticationForHiddenTimestamp = useRef<number>(0);
@@ -241,14 +149,8 @@ const Page: React.FC = () => {
     const pendingPeopleSearchReset = useRef<(() => void) | undefined>(
         undefined,
     );
-    const { show: showFixCreationTime, props: fixCreationTimeVisibilityProps } =
-        useModalVisibility();
     const { authenticateUser, authenticateUserDialogProps } =
         useGalleryAuthentication();
-    const { show: showAlbumNameInput, props: albumNameInputVisibilityProps } =
-        useModalVisibility();
-    const { show: showEditLocation, props: editLocationVisibilityProps } =
-        useModalVisibility();
     const {
         show: showEditAlbumDetails,
         props: editAlbumDetailsVisibilityProps,
@@ -271,15 +173,6 @@ const Page: React.FC = () => {
             setIsMapView(true);
         })();
     }, [mapEnabled, onGenericError]);
-
-    const [albumAddedNotification, setAlbumAddedNotification] = useState<{
-        open: boolean;
-        albumName?: string;
-    }>({ open: false });
-    const [publicLinkToast, setPublicLinkToast] = useState<{
-        open: boolean;
-        url?: string;
-    }>({ open: false });
 
     const {
         user,
@@ -310,6 +203,17 @@ const Page: React.FC = () => {
         barMode == "hidden-albums"
             ? ItemVisibility.hidden
             : ItemVisibility.visible;
+    const {
+        publicLinkToast,
+        setPublicLinkToast,
+        handleFavoriteFileOp,
+        onSendLinkError,
+        handleFileViewerToggleFavorite,
+        handleFileViewerFileVisibilityUpdate,
+        handleFileViewerSendLink,
+        handleMarkTempDeleted,
+    } = useFileMutations({ state, dispatch, remotePull, quickLinkVisibility });
+
     const activeCollectionID =
         state.view?.type == "people" ||
         state.view?.type == "album-overview" ||
@@ -614,18 +518,6 @@ const Page: React.FC = () => {
         setSelected(selected);
     };
 
-    const clearSelection = useCallback(() => {
-        if (!selected.count) {
-            return;
-        }
-        setSelected({
-            ownCount: 0,
-            count: 0,
-            collectionID: 0,
-            context: undefined,
-        });
-    }, [selected.count]);
-
     const keyboardShortcutHandlerRef = useRef({
         selectAll,
         clearSelection,
@@ -673,427 +565,57 @@ const Page: React.FC = () => {
         return user ? setupSelectAllKeyBoardShortcutHandler() : undefined;
     }, [!!user]);
 
-    const handleRemoveFilesFromCollection = (collection: Collection) => {
-        void (async () => {
-            showLoadingBar();
-            let notifyOthersFiles = false;
-            try {
-                setOpenCollectionSelector(false);
-                const selectedFiles = getSelectedFiles(selected, filteredFiles);
-                const processedCount = await removeFromCollection(
-                    collection,
-                    selectedFiles,
-                );
-                notifyOthersFiles = processedCount != selectedFiles.length;
-                clearSelection();
-                await remotePull({
-                    silent: true,
-                    source: "remove-from-collection",
-                });
-            } catch (e) {
-                onGenericError(e);
-            } finally {
-                hideLoadingBar();
-            }
+    const {
+        openCollectionSelector,
+        showAlbumNameInput,
+        albumNameInputVisibilityProps,
+        setPostCreateAlbumOp,
+        postCreateAlbumHidden,
+        handleRemoveFilesFromCollection,
+        createOnSelectForCollectionOp,
+        createOnCreateForCollectionOp,
+        handleOpenCollectionSelector,
+        handleCloseCollectionSelector,
+        handleAddSingleFileToCollection,
+        collectionOperationDialogs,
+    } = useCollectionOperations({
+        state,
+        selected,
+        filteredFiles,
+        barMode,
+        clearSelection,
+        remotePull,
+    });
 
-            if (notifyOthersFiles) {
-                showMiniDialog(notifyOthersFilesDialogAttributes());
-            }
-        })();
-    };
-
-    const createOnSelectForCollectionOp =
-        (op: CollectionOp) => (selectedCollection: Collection) => {
-            const selectedFiles = getSelectedFiles(selected, filteredFiles);
-            const userFiles = selectedFiles.filter(
-                (f) => f.ownerID == user!.id,
-            );
-            const sourceCollectionID = selected.collectionID;
-
-            const performSelectedCollectionOp = async (
-                op: CollectionOp,
-                filesToProcess: EnteFile[],
-                notifySkippedFiles = false,
-            ) => {
-                showLoadingBar();
-                try {
-                    setOpenCollectionSelector(false);
-                    if (filesToProcess.length > 0) {
-                        await performCollectionOp(
-                            op,
-                            selectedCollection,
-                            filesToProcess,
-                            sourceCollectionID,
-                        );
-                    }
-                    if (notifySkippedFiles) {
-                        showMiniDialog(notifyOthersFilesDialogAttributes());
-                    }
-                    clearSelection();
-                    await remotePull({
-                        silent: true,
-                        source: `collection-op:${op}`,
-                    });
-                } finally {
-                    hideLoadingBar();
-                }
-            };
-
-            const shouldAddInsteadOfMove =
-                op == "move" &&
-                selectedCollection.owner.id != user!.id &&
-                canAddFilesToCollection(selectedCollection);
-
-            if (shouldAddInsteadOfMove) {
-                showMiniDialog({
-                    title: t("cannot_move_to_shared_albums"),
-                    message: t("cannot_move_to_shared_albums_message"),
-                    continue: {
-                        text: t("add"),
-                        action: () =>
-                            performSelectedCollectionOp("add", selectedFiles),
-                    },
-                    cancel: t("cancel"),
-                });
-                return;
-            }
-
-            void (async () => {
-                try {
-                    const filesToProcess =
-                        op == "add" ? selectedFiles : userFiles;
-                    await performSelectedCollectionOp(
-                        op,
-                        filesToProcess,
-                        op != "add" && userFiles.length != selectedFiles.length,
-                    );
-                } catch (e) {
-                    onGenericError(e);
-                }
-            })();
-        };
-
-    const createOnCreateForCollectionOp = useCallback(
-        (op: CollectionOp) => {
-            setPostCreateAlbumOp(op);
-            postCreateAlbumHidden.current =
-                (op == "add" || op == "move") && barMode == "hidden-albums";
-            return showAlbumNameInput;
+    const {
+        suppressContextSelectionBar,
+        showAddPersonAction,
+        fixCreationTimeVisibilityProps,
+        showEditLocation,
+        showContextMenuAssignPerson,
+        createFileOpHandler,
+        handleDeleteFiles,
+        selectedFavoriteCount,
+        selectedCount,
+        selectedOwnCount,
+        selectedFileOperationDialogs,
+    } = useSelectedFileOperations({
+        state,
+        dispatch,
+        peopleState,
+        selected,
+        filteredFiles,
+        quickLinkVisibility,
+        clearSelection,
+        onAddSaveGroup,
+        remotePull,
+        mutations: {
+            setPublicLinkToast,
+            handleFavoriteFileOp,
+            onSendLinkError,
+            handleMarkTempDeleted,
         },
-        [showAlbumNameInput, barMode],
-    );
-
-    const handleAlbumNameSubmit = useCallback(
-        async (name: string) => {
-            try {
-                const collection = postCreateAlbumHidden.current
-                    ? await createHiddenAlbum(name)
-                    : await createAlbum(name);
-
-                if (pendingSingleFileAdd.current) {
-                    await performCollectionOp(
-                        "add",
-                        collection,
-                        [pendingSingleFileAdd.current.file],
-                        pendingSingleFileAdd.current.sourceCollectionSummaryID,
-                    );
-
-                    await remotePull({
-                        silent: true,
-                        source: "single-file-add-new-album",
-                    });
-                    setAlbumAddedNotification({
-                        open: true,
-                        albumName: collection.name,
-                    });
-                    setOpenCollectionSelector(false);
-                    setPostCreateAlbumOp(undefined);
-                    postCreateAlbumHidden.current = false;
-                    return;
-                }
-
-                if (postCreateAlbumOp === undefined) {
-                    await remotePull();
-                    showNotification({
-                        color: "primary",
-                        title: t("album_created"),
-                    });
-                    return;
-                }
-
-                createOnSelectForCollectionOp(postCreateAlbumOp)(collection);
-                setPostCreateAlbumOp(undefined);
-                postCreateAlbumHidden.current = false;
-            } finally {
-                pendingSingleFileAdd.current = undefined;
-            }
-        },
-        [
-            createOnSelectForCollectionOp,
-            postCreateAlbumOp,
-            remotePull,
-            showNotification,
-        ],
-    );
-
-    const handleFavoriteFileOp = async (
-        op: Extract<FileOp, "favorite" | "unfavorite">,
-        selectedFiles: EnteFile[],
-    ) => {
-        const filesToProcess: EnteFile[] = [];
-        let skippedUnsupportedSharedFile = false;
-
-        // Shared copies need a metadata hash to find their owned equivalent.
-        for (const file of selectedFiles) {
-            if (file.ownerID == user!.id || metadataHash(file.metadata)) {
-                filesToProcess.push(file);
-            } else {
-                skippedUnsupportedSharedFile = true;
-            }
-        }
-
-        if (!filesToProcess.length) {
-            return { processed: false, skippedUnsupportedSharedFile };
-        }
-
-        const isFavorite = op == "favorite";
-        const previousFavoriteByFileID = new Map(
-            filesToProcess.map((file) => [
-                file.id,
-                favoriteFileIDs.has(file.id),
-            ]),
-        );
-
-        for (const file of filesToProcess) {
-            dispatch({ type: "addPendingFavoriteUpdate", fileID: file.id });
-            dispatch({ type: "unsyncedFavoriteUpdate", file, isFavorite });
-        }
-
-        try {
-            const action = isFavorite
-                ? addToFavoritesCollection
-                : removeFromFavoritesCollection;
-            await action(filesToProcess);
-            return { processed: true, skippedUnsupportedSharedFile };
-        } catch (e) {
-            for (const file of filesToProcess) {
-                dispatch({
-                    type: "unsyncedFavoriteUpdate",
-                    file,
-                    isFavorite: previousFavoriteByFileID.get(file.id)!,
-                });
-            }
-            throw e;
-        } finally {
-            for (const file of filesToProcess) {
-                dispatch({
-                    type: "removePendingFavoriteUpdate",
-                    fileID: file.id,
-                });
-            }
-        }
-    };
-
-    const onSendLinkError = useCallback(
-        (e: unknown) => {
-            if (isHTTPErrorWithStatus(e, 402)) {
-                log.error("Could not create share link", e);
-                showMiniDialog(
-                    errorDialogAttributes(
-                        t("share_link_subscription_required"),
-                    ),
-                );
-            } else {
-                onGenericError(e);
-            }
-        },
-        [showMiniDialog, onGenericError],
-    );
-
-    const createFileOpHandler =
-        (op: FileOp, options?: { suppressSelectionBar?: boolean }) => () => {
-            return (async () => {
-                if (options?.suppressSelectionBar) {
-                    setSuppressContextSelectionBar(true);
-                }
-                showLoadingBar();
-                try {
-                    if (op == "sendLink") {
-                        const selectedFiles = getSelectedFiles(
-                            selected,
-                            filteredFiles,
-                        );
-                        const ownedSelectedFiles = selectedFiles.filter(
-                            (file) => file.ownerID == user!.id,
-                        );
-                        if (!ownedSelectedFiles.length) return;
-                        if (ownedSelectedFiles.length != selectedFiles.length) {
-                            showMiniDialog(notifyOthersFilesDialogAttributes());
-                        }
-
-                        const quickLinkCollection =
-                            await createQuickLinkCollection(
-                                quickLinkNameForFiles(ownedSelectedFiles),
-                                quickLinkVisibility,
-                            );
-                        await addToCollection(
-                            quickLinkCollection,
-                            ownedSelectedFiles,
-                        );
-                        const publicURL = await createPublicURL(
-                            quickLinkCollection.id,
-                            { enableJoin: false },
-                        );
-                        const resolvedURL = await resolveQuickLinkURL(
-                            publicURL.url,
-                            quickLinkCollection.key,
-                            customDomain,
-                        );
-                        setPublicLinkToast({ open: true, url: resolvedURL });
-
-                        clearSelection();
-                        await remotePull({
-                            silent: true,
-                            source: "selected-files-quick-link",
-                        });
-                        return;
-                    }
-
-                    // Hide every non-hidden copy, including copies outside this view.
-                    const opFiles =
-                        op == "hide"
-                            ? state.collectionFiles.filter(
-                                  (f) => !state.hiddenFileIDs.has(f.id),
-                              )
-                            : filteredFiles;
-                    const selectedFiles = getSelectedFiles(selected, opFiles);
-                    if (op == "favorite" || op == "unfavorite") {
-                        const { processed, skippedUnsupportedSharedFile } =
-                            await handleFavoriteFileOp(op, selectedFiles);
-                        clearSelection();
-                        if (processed) {
-                            await remotePull({
-                                silent: true,
-                                source: `file-op:${op}`,
-                            });
-                        }
-                        if (skippedUnsupportedSharedFile) {
-                            showMiniDialog(
-                                notifyUnsupportedSharedFavoritesDialogAttributes(),
-                            );
-                        }
-                        return;
-                    }
-
-                    const ownedSelectedFiles =
-                        op == "download"
-                            ? selectedFiles
-                            : selectedFiles.filter(
-                                  (file) => file.ownerID == user!.id,
-                              );
-                    if (ownedSelectedFiles.length > 0) {
-                        await performFileOp(
-                            op,
-                            ownedSelectedFiles,
-                            onAddSaveGroup,
-                            handleMarkTempDeleted,
-                            () => dispatch({ type: "clearTempDeleted" }),
-                            (files) =>
-                                dispatch({ type: "markTempHidden", files }),
-                            () => dispatch({ type: "clearTempHidden" }),
-                            (files) => {
-                                setFixCreationTimeFiles(files);
-                                showFixCreationTime();
-                            },
-                        );
-                    }
-
-                    if (
-                        op != "download" &&
-                        ownedSelectedFiles.length != selectedFiles.length
-                    ) {
-                        showMiniDialog(notifyOthersFilesDialogAttributes());
-                    }
-                    clearSelection();
-                    await remotePull({ silent: true, source: `file-op:${op}` });
-                } catch (e) {
-                    if (op == "trash") {
-                        throw e;
-                    } else if (op == "sendLink") {
-                        onSendLinkError(e);
-                    } else {
-                        onGenericError(e);
-                    }
-                } finally {
-                    if (options?.suppressSelectionBar) {
-                        setSuppressContextSelectionBar(false);
-                    }
-                    hideLoadingBar();
-                }
-            })();
-        };
-
-    const handleAddPersonToSelectedFiles = useCallback(
-        async (personID: string) => {
-            showLoadingBar();
-            try {
-                const selectedFiles = getSelectedFiles(selected, filteredFiles);
-                await addManualFileAssignmentsToPerson(
-                    personID,
-                    selectedFiles.map((f) => f.id),
-                );
-                clearSelection();
-                const personName = namedPeople.find(
-                    (p) => p.id === personID,
-                )?.name;
-                showNotification({
-                    color: "secondary",
-                    startIcon: CheckmarkCircle02Icon,
-                    title: t("added_to_person"),
-                    caption: personName,
-                });
-            } catch (e) {
-                onGenericError(e);
-            } finally {
-                hideLoadingBar();
-            }
-        },
-        [
-            selected,
-            filteredFiles,
-            clearSelection,
-            showNotification,
-            namedPeople,
-            showLoadingBar,
-            hideLoadingBar,
-            onGenericError,
-        ],
-    );
-
-    const handleContextMenuSelectPerson = useCallback(
-        (personID: string) => {
-            contextMenuAssignPersonProps.onClose();
-            void handleAddPersonToSelectedFiles(personID);
-        },
-        [contextMenuAssignPersonProps, handleAddPersonToSelectedFiles],
-    );
-
-    const handleEditLocationConfirm = useCallback(
-        async (location: Location) => {
-            const userFiles = selectedFilesInView.filter(
-                (f) => f.ownerID == user!.id,
-            );
-            if (userFiles.length > 0) {
-                await updateFilesLocation(
-                    userFiles,
-                    location.latitude,
-                    location.longitude,
-                );
-            }
-            void remotePull({ silent: true, source: "edit-location" });
-        },
-        [selectedFilesInView, user, remotePull],
-    );
+    });
 
     const openUploader = (intent?: UploadTypeSelectorIntent) => {
         if (uploadManager.isUploadInProgress()) return;
@@ -1291,101 +813,6 @@ const Page: React.FC = () => {
         [clearSelection, dispatch, handleShowAlbumOverview, handleShowPeople],
     );
 
-    const handleFileViewerToggleFavorite = useCallback(
-        async (file: EnteFile) => {
-            const fileID = file.id;
-            const isFavorite = favoriteFileIDs.has(fileID);
-
-            dispatch({ type: "addPendingFavoriteUpdate", fileID });
-            dispatch({
-                type: "unsyncedFavoriteUpdate",
-                file,
-                isFavorite: !isFavorite,
-            });
-            try {
-                const action = isFavorite
-                    ? removeFromFavoritesCollection
-                    : addToFavoritesCollection;
-                await action([file]);
-            } catch (e) {
-                dispatch({ type: "unsyncedFavoriteUpdate", file, isFavorite });
-                throw e;
-            } finally {
-                dispatch({ type: "removePendingFavoriteUpdate", fileID });
-            }
-        },
-        [favoriteFileIDs],
-    );
-
-    const handleFileViewerFileVisibilityUpdate = useCallback(
-        async (file: EnteFile, visibility: ItemVisibility) => {
-            const fileID = file.id;
-            dispatch({ type: "addPendingVisibilityUpdate", fileID });
-            try {
-                await updateFilesVisibility([file], visibility);
-                // Keep the UI ahead of the background pull.
-                // TODO: Replace with files pull?
-                dispatch({
-                    type: "unsyncedPrivateMagicMetadataUpdate",
-                    fileID,
-                    privateMagicMetadata: {
-                        ...file.magicMetadata,
-                        count: file.magicMetadata?.count ?? 0,
-                        version: (file.magicMetadata?.version ?? 0) + 1,
-                        data: { ...file.magicMetadata?.data, visibility },
-                    },
-                });
-            } finally {
-                dispatch({ type: "removePendingVisibilityUpdate", fileID });
-            }
-        },
-        [],
-    );
-
-    const handleFileViewerSendLink = useCallback(
-        async (file: EnteFile) => {
-            if (file.ownerID != user?.id) return;
-
-            showLoadingBar();
-            try {
-                const quickLinkCollection = await createQuickLinkCollection(
-                    quickLinkNameForFiles([file]),
-                    quickLinkVisibility,
-                );
-                await addToCollection(quickLinkCollection, [file]);
-                const publicURL = await createPublicURL(
-                    quickLinkCollection.id,
-                    { enableJoin: false },
-                );
-                const resolvedURL = await resolveQuickLinkURL(
-                    publicURL.url,
-                    quickLinkCollection.key,
-                    customDomain,
-                );
-                setPublicLinkToast({ open: true, url: resolvedURL });
-                await remotePull({ silent: true, source: "viewer-send-link" });
-            } catch (e) {
-                onSendLinkError(e);
-            } finally {
-                hideLoadingBar();
-            }
-        },
-        [
-            user?.id,
-            showLoadingBar,
-            hideLoadingBar,
-            customDomain,
-            quickLinkVisibility,
-            remotePull,
-            onSendLinkError,
-        ],
-    );
-
-    const handleMarkTempDeleted = useCallback(
-        (files: EnteFile[]) => dispatch({ type: "markTempDeleted", files }),
-        [],
-    );
-
     const handleSelectCollection = useCallback(
         (collectionID: number) => {
             setIsMapView(false);
@@ -1406,33 +833,6 @@ const Page: React.FC = () => {
             dispatch({ type: "showPerson", personID });
         },
         [closeCollectionMap],
-    );
-
-    const handleOpenCollectionSelector = useCallback(
-        (attributes: CollectionSelectorAttributes) => {
-            setCollectionSelectorAttributes(attributes);
-            setOpenCollectionSelector(true);
-        },
-        [],
-    );
-
-    const selectedCount = selected.count;
-    const selectedOwnCount = selected.ownCount;
-    const handleDeleteFiles = useCallback(
-        (suppressSelectionBar = false) => {
-            if (selectedOwnCount === 0) return;
-            showMiniDialog(
-                trashFilesDialogAttributes(
-                    selectedOwnCount,
-                    createFileOpHandler("trash", { suppressSelectionBar }),
-                ),
-            );
-        },
-        [selectedOwnCount, createFileOpHandler, showMiniDialog],
-    );
-    const selectedFavoriteCount = useMemo(
-        () => countSelectedFavorites(selected, favoriteFileIDs),
-        [favoriteFileIDs, selected],
     );
 
     const handleEditAlbumDetails = useCallback(
@@ -1470,254 +870,25 @@ const Page: React.FC = () => {
         [activeCollection, remotePull],
     );
 
-    const handleContextMenuAction = useCallback(
-        (
-            action: FileContextAction,
-            _targetFile?: EnteFile,
-            meta?: { isEphemeralSingleSelection: boolean },
-        ) => {
-            const suppressSelectionBar = !!meta?.isEphemeralSingleSelection;
-            switch (action) {
-                case "sendLink":
-                    void createFileOpHandler("sendLink", {
-                        suppressSelectionBar,
-                    })();
-                    break;
-                case "download":
-                    void createFileOpHandler("download", {
-                        suppressSelectionBar,
-                    })();
-                    break;
-                case "favorite":
-                    void createFileOpHandler("favorite", {
-                        suppressSelectionBar,
-                    })();
-                    break;
-                case "unfavorite":
-                    void createFileOpHandler("unfavorite", {
-                        suppressSelectionBar,
-                    })();
-                    break;
-                case "archive":
-                    void createFileOpHandler("archive", {
-                        suppressSelectionBar,
-                    })();
-                    break;
-                case "unarchive":
-                    void createFileOpHandler("unarchive", {
-                        suppressSelectionBar,
-                    })();
-                    break;
-                case "hide":
-                    void createFileOpHandler("hide", {
-                        suppressSelectionBar,
-                    })();
-                    break;
-                case "fixTime":
-                    void createFileOpHandler("fixTime", {
-                        suppressSelectionBar,
-                    })();
-                    break;
-                case "trash":
-                    handleDeleteFiles(suppressSelectionBar);
-                    break;
-                case "deletePermanently":
-                    showMiniDialog({
-                        title: t("delete_files_title"),
-                        kind: "warning",
-                        message: t("delete_files_message"),
-                        continue: {
-                            text: t("delete"),
-                            color: "critical",
-                            action: createFileOpHandler("deletePermanently", {
-                                suppressSelectionBar,
-                            }),
-                        },
-                    });
-                    break;
-                case "restore":
-                    handleOpenCollectionSelector({
-                        action: "restore",
-                        onCreateCollection:
-                            createOnCreateForCollectionOp("restore"),
-                        onSelectCollection:
-                            createOnSelectForCollectionOp("restore"),
-                    });
-                    break;
-                case "addToAlbum":
-                    handleOpenCollectionSelector({
-                        action: "add",
-                        sourceCollectionSummaryID: activeCollectionSummary?.id,
-                        showHiddenCollections: barMode == "hidden-albums",
-                        onCreateCollection:
-                            createOnCreateForCollectionOp("add"),
-                        onSelectCollection:
-                            createOnSelectForCollectionOp("add"),
-                    });
-                    break;
-                case "moveToAlbum":
-                    handleOpenCollectionSelector({
-                        action: "move",
-                        sourceCollectionSummaryID: activeCollectionSummary?.id,
-                        showHiddenCollections: barMode == "hidden-albums",
-                        onCreateCollection:
-                            createOnCreateForCollectionOp("move"),
-                        onSelectCollection:
-                            createOnSelectForCollectionOp("move"),
-                    });
-                    break;
-                case "removeFromAlbum": {
-                    if (!activeCollection) break;
-                    const isSharedIncoming =
-                        activeCollectionSummary?.attributes.has(
-                            "sharedIncoming",
-                        );
-                    const isSharedOutgoing =
-                        activeCollectionSummary?.attributes.has(
-                            "sharedOutgoing",
-                        );
-                    const isRemovingOthers = selectedCount != selectedOwnCount;
-                    const remove = () =>
-                        handleRemoveFilesFromCollection(activeCollection);
-
-                    if (isSharedIncoming) {
-                        if (isRemovingOthers) {
-                            showMiniDialog({
-                                title: t("remove_from_album"),
-                                message: t("remove_from_album_others_message"),
-                                continue: {
-                                    text: t("remove"),
-                                    color: "critical",
-                                    action: remove,
-                                },
-                                cancel: t("cancel"),
-                            });
-                        } else {
-                            remove();
-                        }
-                        break;
-                    }
-
-                    if (isSharedOutgoing && isRemovingOthers) {
-                        showMiniDialog({
-                            title: t("remove_from_album"),
-                            message: t("remove_from_album_others_message"),
-                            continue: {
-                                text: t("remove"),
-                                color: "critical",
-                                action: remove,
-                            },
-                        });
-                        break;
-                    }
-
-                    const onlyUserFiles = !isRemovingOthers;
-                    showMiniDialog({
-                        title: t("remove_from_album"),
-                        message: onlyUserFiles
-                            ? t("confirm_remove_message")
-                            : t("confirm_remove_incl_others_message"),
-                        continue: {
-                            text: t("yes_remove"),
-                            color: onlyUserFiles ? "primary" : "critical",
-                            action: remove,
-                        },
-                    });
-                    break;
-                }
-                case "unhide":
-                    handleOpenCollectionSelector({
-                        action: "unhide",
-                        onCreateCollection:
-                            createOnCreateForCollectionOp("unhide"),
-                        onSelectCollection:
-                            createOnSelectForCollectionOp("unhide"),
-                    });
-                    break;
-                case "addPerson":
-                    showContextMenuAssignPerson();
-                    break;
-                case "editLocation":
-                    showEditLocation();
-                    break;
-            }
-        },
-        [
-            createFileOpHandler,
+    const handleContextMenuAction = useFileContextActions({
+        collectionOperations: {
             createOnCreateForCollectionOp,
             createOnSelectForCollectionOp,
             handleOpenCollectionSelector,
             handleRemoveFilesFromCollection,
+        },
+        selectedOperations: {
+            createFileOpHandler,
             handleDeleteFiles,
-            showMiniDialog,
             showContextMenuAssignPerson,
             showEditLocation,
-            activeCollectionSummary,
-            activeCollection,
-            barMode,
             selectedCount,
             selectedOwnCount,
-        ],
-    );
-
-    const handleCloseCollectionSelector = useCallback(
-        () => setOpenCollectionSelector(false),
-        [],
-    );
-    const handleCollectionSelectorExited = useCallback(
-        () => setCollectionSelectorAttributes(undefined),
-        [],
-    );
-
-    const handleAddSingleFileToCollection = useCallback(
-        (file: EnteFile, sourceCollectionSummaryID?: number) => {
-            pendingSingleFileAdd.current = { file, sourceCollectionSummaryID };
-
-            const handleSelect = async (collection: Collection) => {
-                try {
-                    setAlbumAddedNotification({ open: false });
-                    showLoadingBar();
-                    await performCollectionOp(
-                        "add",
-                        collection,
-                        [file],
-                        sourceCollectionSummaryID,
-                    );
-                    await remotePull({
-                        silent: true,
-                        source: "single-file-add-to-album",
-                    });
-                    setAlbumAddedNotification({
-                        open: true,
-                        albumName: collection.name,
-                    });
-                } catch (e) {
-                    onGenericError(e);
-                } finally {
-                    pendingSingleFileAdd.current = undefined;
-                    hideLoadingBar();
-                }
-            };
-
-            const handleCreate = () => {
-                setPostCreateAlbumOp("add");
-                postCreateAlbumHidden.current = false;
-                showAlbumNameInput();
-            };
-
-            handleOpenCollectionSelector({
-                action: "add",
-                sourceCollectionSummaryID,
-                onSelectCollection: (collection) =>
-                    void handleSelect(collection),
-                onCreateCollection: handleCreate,
-                onCancel: () => {
-                    pendingSingleFileAdd.current = undefined;
-                },
-            });
         },
-        [handleOpenCollectionSelector, remotePull, onGenericError],
-    );
+        activeCollection,
+        activeCollectionSummary,
+        barMode,
+    });
 
     const showAppDownloadFooter =
         state.collectionFiles.length < 30 && !isInSearchMode;
@@ -1879,31 +1050,15 @@ const Page: React.FC = () => {
                 onDrop={setDragAndDropFiles}
             >
                 {blockingLoad && <TranslucentLoadingOverlay />}
-                <CollectionSelector
-                    open={openCollectionSelector}
-                    onClose={handleCloseCollectionSelector}
-                    onExited={handleCollectionSelectorExited}
-                    attributes={collectionSelectorAttributes}
-                    collectionSummaries={
-                        collectionSelectorAttributes?.showHiddenCollections
-                            ? state.hiddenCollectionSummaries
-                            : normalCollectionSummaries
-                    }
-                    collectionForCollectionSummaryID={(id) =>
-                        findCollectionCreatingIfNeeded(state.collections, id)
-                    }
-                />
+                {collectionOperationDialogs}
+                {selectedFileOperationDialogs}
                 <DownloadStatusNotifications
                     {...{ saveGroups, onRemoveSaveGroup }}
                     onShowCollectionSummary={
                         handleDownloadStatusNotificationsShowCollectionSummary
                     }
                 />
-                <FixCreationTime
-                    {...fixCreationTimeVisibilityProps}
-                    files={fixCreationTimeFiles}
-                    onRemotePull={remotePull}
-                />
+
                 <PhotosNavigationShell
                     ref={navigationRef}
                     isFirstLoad={isFirstLoad}
@@ -2257,12 +1412,7 @@ const Page: React.FC = () => {
                         handleShowPeople(pendingPeopleSearchReset.current)
                     }
                 />
-                <AssignPersonDialog
-                    {...contextMenuAssignPersonProps}
-                    people={namedPeople}
-                    title={t("add_a_person")}
-                    onSelectPerson={handleContextMenuSelectPerson}
-                />
+
                 {slideshow &&
                     slideshow.collectionID === activeCollection?.id &&
                     !isInSearchMode && (
@@ -2284,20 +1434,7 @@ const Page: React.FC = () => {
                 )}
                 <AuthenticateUser {...authenticateUserDialogProps} />
             </FullScreenDropZone>
-            <SingleInputDialog
-                {...albumNameInputVisibilityProps}
-                title={t("new_album")}
-                label={t("album_name")}
-                submitButtonTitle={t("create")}
-                onClose={() => {
-                    // Do not leak a cancelled add into the next album creation.
-                    pendingSingleFileAdd.current = undefined;
-                    postCreateAlbumHidden.current = false;
-                    setPostCreateAlbumOp(undefined);
-                    albumNameInputVisibilityProps.onClose();
-                }}
-                onSubmit={handleAlbumNameSubmit}
-            />
+
             <QuickLinkCreatedNotification
                 open={publicLinkToast.open}
                 onCopy={() => {
@@ -2308,24 +1445,6 @@ const Page: React.FC = () => {
                 onClose={() =>
                     setPublicLinkToast((prev) => ({ ...prev, open: false }))
                 }
-            />
-            <Notification
-                open={albumAddedNotification.open}
-                onClose={() =>
-                    setAlbumAddedNotification((s) => ({ ...s, open: false }))
-                }
-                keepOpenOnClick
-                attributes={{
-                    color: "inherit",
-                    startIcon: null,
-                    title: t("added_to_album"),
-                    caption: albumAddedNotification.albumName,
-                }}
-            />
-            <EditLocationDialog
-                {...editLocationVisibilityProps}
-                files={selectedFilesInView}
-                onConfirm={handleEditLocationConfirm}
             />
         </PhotosNavigationContext.Provider>
     );
