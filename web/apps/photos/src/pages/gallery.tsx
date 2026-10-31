@@ -1,32 +1,24 @@
+import { AlbumsSection } from "@/components/gallery/AlbumsSection";
 import { GalleryDownloadNotifications } from "@/components/gallery/GalleryDownloadNotifications";
+import { GalleryMedia } from "@/components/gallery/GalleryMedia";
 import { useCollectionOperations } from "@/components/gallery/hooks/use-collection-operations";
 import { useFileContextActions } from "@/components/gallery/hooks/use-file-context-actions";
 import { useFileMutations } from "@/components/gallery/hooks/use-file-mutations";
 import { useGallerySelection } from "@/components/gallery/hooks/use-gallery-selection";
 import { useGalleryUploads } from "@/components/gallery/hooks/use-gallery-uploads";
 import { useSelectedFileOperations } from "@/components/gallery/hooks/use-selected-file-operations";
+import type { GallerySectionOperations } from "@/components/gallery/section-types";
 // TODO: Audit this file (the code here is mostly fine, but needs revisiting
 // the file it depends on have been audited and their interfaces fixed).
 /* eslint-disable react-hooks/exhaustive-deps */
 import { AuthenticateUser } from "@/components/AuthenticateUser";
 import { DesktopWhatsNew } from "@/components/DesktopWhatsNew";
 import type { FileListHeaderOrFooter } from "@/components/FileList";
-import { FileListWithViewer } from "@/components/FileListWithViewer";
 import { QuickLinkCreatedNotification } from "@/components/QuickLinkCreatedNotification";
 import { SelectedFileOptions } from "@/components/SelectedFileOptions";
-import { AlbumSlideshow } from "@/components/collections/AlbumSlideshow";
 import { CollectionMap } from "@/components/collections/CollectionMap";
-import {
-    EditAlbumDetailsDialog,
-    type AlbumDetails,
-} from "@/components/collections/EditAlbumDetailsDialog";
 import { GalleryBarAndListHeader } from "@/components/collections/GalleryBarAndListHeader";
-import {
-    GalleryEmptyState,
-    PeopleConsentDialog,
-    SearchResultsHeader,
-} from "@/components/gallery";
-import { AlbumsOverview } from "@/components/gallery/AlbumsOverview";
+import { PeopleConsentDialog, SearchResultsHeader } from "@/components/gallery";
 import { DuplicatesView } from "@/components/gallery/DuplicatesView";
 import { LargeFilesView } from "@/components/gallery/LargeFilesView";
 import { LegacyGallerySection } from "@/components/gallery/LegacyGallerySection";
@@ -48,17 +40,9 @@ import {
 import { useGalleryAuthentication } from "@/components/gallery/hooks/use-gallery-authentication";
 import { useGalleryLibrary } from "@/components/gallery/hooks/use-gallery-library";
 import { useGalleryPreferences } from "@/components/gallery/hooks/use-gallery-preferences";
-import { useGallerySlideshow } from "@/components/gallery/hooks/use-gallery-slideshow";
 import type { GalleryBarMode } from "@/components/gallery/reducer";
-import { useAlbumNavigationData } from "@/components/gallery/use-album-navigation-data";
-import {
-    albumFilters,
-    visibleAlbumFilters,
-    type AlbumFilter,
-} from "@/utils/album-filters";
-import { externalLink } from "@/utils/link";
+import type { AlbumFilter } from "@/utils/album-filters";
 import { sortPeople } from "@/utils/people-sort";
-import { Typography } from "@mui/material";
 import { TranslucentLoadingOverlay } from "ente-base/components/loaders";
 import { useModalVisibility } from "ente-base/components/utils/modal";
 import { useBaseContext } from "ente-base/context";
@@ -75,16 +59,11 @@ import {
     useSettingsSnapshot,
 } from "ente-new/photos/components/utils/use-snapshot";
 import {
-    renameCollection,
-    updateCollectionDetails,
-} from "ente-new/photos/services/collection";
-import {
     haveOnlySystemCollections,
     PseudoCollectionID,
 } from "ente-new/photos/services/collection-summary";
 import { isMLEnabled } from "ente-new/photos/services/ml";
 
-import { uploadManager } from "@/services/upload-manager";
 import { getSelectedFiles, type SelectedState } from "@/utils/file";
 import { filterSearchableFiles } from "ente-new/photos/services/search";
 import type { SearchOption } from "ente-new/photos/services/search/types";
@@ -92,7 +71,6 @@ import { updateMapEnabled } from "ente-new/photos/services/settings";
 import { usePhotosAppContext } from "ente-new/photos/types/context";
 import { useRouter } from "next/router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Trans } from "react-i18next";
 
 const Page: React.FC = () => {
     const { onGenericError } = useBaseContext();
@@ -114,6 +92,10 @@ const Page: React.FC = () => {
     const isCleanupViewOpen = cleanupView !== undefined;
     const [isContextMenuOpen, setIsContextMenuOpen] = useState(false);
     const { selected, setSelected, clearSelection } = useGallerySelection();
+    const [sectionActivity, setSectionActivity] = useState({
+        selection: false,
+        drop: false,
+    });
     const [blockingLoad, setBlockingLoad] = useState(false);
     const [isFileViewerOpen, setIsFileViewerOpen] = useState(false);
     const [pendingFileNavigation, setPendingFileNavigation] = useState<{
@@ -140,10 +122,6 @@ const Page: React.FC = () => {
     );
     const { authenticateUser, authenticateUserDialogProps } =
         useGalleryAuthentication();
-    const {
-        show: showEditAlbumDetails,
-        props: editAlbumDetailsVisibilityProps,
-    } = useModalVisibility();
     const [selectedPlace, setSelectedPlace] = useState<PlaceSelection>();
     const [placeSelectionRevision, setPlaceSelectionRevision] = useState(0);
     const [isMapView, setIsMapView] = useState(false);
@@ -173,8 +151,6 @@ const Page: React.FC = () => {
         hiddenFileIDs,
         tempDeletedFileIDs,
         tempHiddenFileIDs,
-        pendingFavoriteUpdates,
-        pendingVisibilityUpdates,
         isInSearchMode,
         filteredFiles,
     } = state;
@@ -225,6 +201,11 @@ const Page: React.FC = () => {
         state.view?.type == "links" ? state.view.selectedLinkID : undefined;
     const galleryBarActiveCollectionID =
         barMode == "links" ? selectedLinkID : activeCollectionID;
+    const preferences = useGalleryPreferences({
+        barMode,
+        activeCollectionID,
+        navigationAvailable: !isCleanupViewOpen && !isInSearchMode,
+    });
     const {
         albumFilter,
         setAlbumFilter,
@@ -237,11 +218,8 @@ const Page: React.FC = () => {
         collectionsSortBy,
         onChangeCollectionsSortBy,
         albumExpansion,
-    } = useGalleryPreferences({
-        barMode,
-        activeCollectionID,
-        navigationAvailable: !isCleanupViewOpen && !isInSearchMode,
-    });
+    } = preferences;
+
     const isActiveCollectionDownloadInProgress = useCallback(() => {
         const group = saveGroups.find(
             (g) => g.collectionSummaryID === galleryBarActiveCollectionID,
@@ -258,57 +236,6 @@ const Page: React.FC = () => {
         [people, peopleSortBy],
     );
     const activePersonID = activePerson?.id;
-    const fileCollectionIDs = useMemo(
-        () =>
-            state.collectionFiles.reduce((result, file) => {
-                const collectionIDs = result.get(file.id);
-                if (collectionIDs) {
-                    if (!collectionIDs.includes(file.collectionID)) {
-                        collectionIDs.push(file.collectionID);
-                    }
-                } else {
-                    result.set(file.id, [file.collectionID]);
-                }
-                return result;
-            }, new Map<number, number[]>()),
-        [state.collectionFiles],
-    );
-
-    const activeCollectionFiles = useMemo(() => {
-        if (!activeCollection) return [];
-        if (barMode == "hidden-albums" || barMode == "archive-albums") {
-            return filteredFiles;
-        }
-
-        return filteredFiles.filter(({ id, magicMetadata }) => {
-            const visibility = magicMetadata?.data.visibility;
-            const isVisible =
-                visibility === undefined ||
-                visibility === ItemVisibility.visible;
-
-            return (
-                isVisible &&
-                !hiddenFileIDs.has(id) &&
-                !tempDeletedFileIDs.has(id) &&
-                !tempHiddenFileIDs.has(id)
-            );
-        });
-    }, [
-        activeCollection,
-        barMode,
-        filteredFiles,
-        hiddenFileIDs,
-        tempDeletedFileIDs,
-        tempHiddenFileIDs,
-    ]);
-    const { slideshow, startSlideshow, closeSlideshow } = useGallerySlideshow({
-        activeCollection,
-        activeCollectionFiles,
-        activeCollectionSummary,
-        isInSearchMode,
-        user,
-    });
-
     const mapFileSource = useMemo(
         () => ({
             collectionFiles: state.collectionFiles,
@@ -345,31 +272,6 @@ const Page: React.FC = () => {
     const collectionSummary = barCollectionSummaries.get(
         galleryBarActiveCollectionID!,
     );
-
-    const {
-        sidebarCollectionSummaries,
-        overviewAlbums,
-        visibleAlbumFilters: sidebarAlbumFilters,
-    } = useAlbumNavigationData({
-        mode: barMode == "links" ? undefined : barMode,
-        collectionsSortBy,
-        collectionSummaries: barCollectionSummaries,
-        uncategorizedCollectionSummaryID:
-            state.uncategorizedCollectionSummaryID,
-        albumFilter,
-        albumSearchQuery,
-    });
-
-    useEffect(() => {
-        const available = visibleAlbumFilters([
-            ...normalCollectionSummaries.values(),
-        ]);
-        if (!available.some(({ value }) => value == albumFilter)) {
-            setAlbumFilter("ente");
-            if (overviewFilter)
-                dispatch({ type: "showAlbumOverview", albumFilter: "ente" });
-        }
-    }, [normalCollectionSummaries, albumFilter, overviewFilter]);
 
     const router = useRouter();
 
@@ -449,9 +351,8 @@ const Page: React.FC = () => {
             fixCreationTimeVisibilityProps.open ||
             authenticateUserDialogProps.open ||
             albumNameInputVisibilityProps.open ||
-            editAlbumDetailsVisibilityProps.open ||
-            isFileViewerOpen ||
-            slideshow
+            sectionActivity.selection ||
+            isFileViewerOpen
         ) {
             return;
         }
@@ -733,11 +634,10 @@ const Page: React.FC = () => {
                 context: undefined,
             });
             closeCollectionMap();
-            closeSlideshow();
             dispatch({ type: "exitSearch", shouldExitSearchMode: true });
             setCleanupView(view);
         },
-        [closeCollectionMap, closeSlideshow],
+        [closeCollectionMap],
     );
 
     const handleShowPeople = useCallback(
@@ -835,41 +735,6 @@ const Page: React.FC = () => {
         [closeCollectionMap],
     );
 
-    const handleEditAlbumDetails = useCallback(
-        async ({ name, description, coverID }: AlbumDetails) => {
-            if (!activeCollection) return;
-
-            let didAttemptWrite = false;
-            try {
-                if (activeCollection.name != name) {
-                    didAttemptWrite = true;
-                    await renameCollection(activeCollection, name);
-                }
-                const descriptionChanged =
-                    (
-                        activeCollection.pubMagicMetadata?.data.caption ?? ""
-                    ).trim() != description;
-                if (descriptionChanged || coverID !== undefined) {
-                    didAttemptWrite = true;
-                    await updateCollectionDetails(activeCollection, {
-                        description: descriptionChanged
-                            ? description
-                            : undefined,
-                        coverID,
-                    });
-                }
-            } finally {
-                if (didAttemptWrite) {
-                    await remotePull({
-                        silent: true,
-                        source: "update-album-details",
-                    });
-                }
-            }
-        },
-        [activeCollection, remotePull],
-    );
-
     const handleContextMenuAction = useFileContextActions({
         collectionOperations: {
             createOnCreateForCollectionOp,
@@ -889,14 +754,6 @@ const Page: React.FC = () => {
         activeCollectionSummary,
         barMode,
     });
-
-    const showAppDownloadFooter =
-        state.collectionFiles.length < 30 && !isInSearchMode;
-
-    const fileListFooter = useMemo(
-        () => (showAppDownloadFooter ? createAppDownloadFooter() : undefined),
-        [showAppDownloadFooter],
-    );
 
     const hasActiveFileSelection =
         selected.count > 0 && selected.collectionID === activeCollectionID;
@@ -995,6 +852,43 @@ const Page: React.FC = () => {
         ],
     );
 
+    const sectionLibrary = { ...state, isFirstLoad };
+    const sectionNavigation = {
+        view: state.view,
+        isInSearchMode,
+        isMapView,
+        selectedPlace,
+        placeSelectionRevision,
+        pendingFileNavigation,
+    };
+    const sectionOperations: GallerySectionOperations = {
+        selected,
+        setSelected,
+        onContextMenuAction: handleContextMenuAction,
+        onContextMenuOpenChange: setIsContextMenuOpen,
+        suppressSelectionUI: suppressContextSelectionBar,
+        showAddPersonAction,
+        onAddSaveGroup,
+        onToggleFavorite: handleFileViewerToggleFavorite,
+        onFileVisibilityUpdate: handleFileViewerFileVisibilityUpdate,
+        onSendLink: handleFileViewerSendLink,
+        onMarkTempDeleted: handleMarkTempDeleted,
+        onSetOpenFileViewer: setIsFileViewerOpen,
+        onRemotePull: remotePull,
+        onRemoteFilesPull: remoteFilesPull,
+        onVisualFeedback: handleVisualFeedback,
+        onAddFileToCollection: handleAddSingleFileToCollection,
+        onPendingNavigationConsumed: handlePendingNavigationConsumed,
+        setBlockingLoad,
+        onUpload: openUploader,
+        onCreateAlbum: () => {
+            setPostCreateAlbumOp(undefined);
+            postCreateAlbumHidden.current = false;
+            showAlbumNameInput();
+        },
+        saveGroups,
+        setSectionActivity,
+    };
     if (!user) {
         // Children rely on user after the mount dispatch.
         return <div></div>;
@@ -1003,7 +897,7 @@ const Page: React.FC = () => {
     const collectionMap = activeCollectionSummary && (
         <CollectionMap
             collectionSummary={activeCollectionSummary}
-            files={activeCollection ? activeCollectionFiles : filteredFiles}
+            files={filteredFiles}
             selectedPlace={
                 activeCollectionID === PseudoCollectionID.all
                     ? selectedPlace
@@ -1028,7 +922,9 @@ const Page: React.FC = () => {
             <FullScreenDropZone
                 {...dropzoneProps}
                 disabled={
-                    dropzoneProps.disabled || !!slideshow || isCleanupViewOpen
+                    dropzoneProps.disabled ||
+                    sectionActivity.drop ||
+                    isCleanupViewOpen
                 }
             >
                 {blockingLoad && <TranslucentLoadingOverlay />}
@@ -1098,8 +994,21 @@ const Page: React.FC = () => {
                     {(presentation) =>
                         !isInSearchMode &&
                         !isCleanupViewOpen &&
-                        !isMapView &&
-                        barMode == "links" ? (
+                        barMode != "people" &&
+                        barMode != "links" &&
+                        (!isMapView ||
+                            activeCollectionID !== PseudoCollectionID.all) ? (
+                            <AlbumsSection
+                                library={sectionLibrary}
+                                operations={sectionOperations}
+                                navigation={sectionNavigation}
+                                preferences={preferences}
+                                presentation={presentation}
+                            />
+                        ) : !isInSearchMode &&
+                          !isCleanupViewOpen &&
+                          !isMapView &&
+                          barMode == "links" ? (
                             <LinksView
                                 presentation={presentation}
                                 onSearchQueryChange={setAlbumSearchQuery}
@@ -1147,10 +1056,8 @@ const Page: React.FC = () => {
                                               albumSearchQuery,
                                               onAlbumSearchQueryChange:
                                                   setAlbumSearchQuery,
-                                              collectionSummaries:
-                                                  sidebarCollectionSummaries,
-                                              visibleAlbumFilters:
-                                                  sidebarAlbumFilters,
+                                              collectionSummaries: [],
+                                              visibleAlbumFilters: [],
                                               uncategorizedCollectionSummaryID:
                                                   state.uncategorizedCollectionSummaryID,
                                               collectionsSortBy,
@@ -1165,7 +1072,7 @@ const Page: React.FC = () => {
                                 {!isMapView && !isCleanupViewOpen && (
                                     <>
                                         <GalleryBarAndListHeader
-                                            albums={sidebarCollectionSummaries}
+                                            albums={[]}
                                             {...{
                                                 user,
                                                 activeCollection,
@@ -1186,12 +1093,8 @@ const Page: React.FC = () => {
                                             }
                                             mode={barMode}
                                             shouldHide={isInSearchMode}
-                                            onEditAlbumDetails={
-                                                showEditAlbumDetails
-                                            }
-                                            onCollectionSlideshow={
-                                                startSlideshow
-                                            }
+                                            onEditAlbumDetails={() => undefined}
+                                            onCollectionSlideshow={() => undefined}
                                             emailByUserID={state.emailByUserID}
                                             shareSuggestionEmails={
                                                 state.shareSuggestionEmails
@@ -1211,37 +1114,6 @@ const Page: React.FC = () => {
                                         onRemoteFilesPull={remoteFilesPull}
                                     />
                                 ) : !isInSearchMode &&
-                                  barMode == "links" ? null : !isInSearchMode &&
-                                  !isFirstLoad &&
-                                  !state.collectionFiles.length &&
-                                  activeCollectionID ===
-                                      PseudoCollectionID.all ? (
-                                    <GalleryEmptyState
-                                        isUploadInProgress={uploadManager.isUploadInProgress()}
-                                        onUpload={openUploader}
-                                    />
-                                ) : !isInSearchMode &&
-                                  !isFirstLoad &&
-                                  isAlbumOverview ? (
-                                    <AlbumsOverview
-                                        onRemotePull={remotePull}
-                                        albums={overviewAlbums}
-                                        title={(
-                                            albumFilters.find(
-                                                ({ value }) =>
-                                                    value == overviewFilter,
-                                            ) ?? albumFilters[0]!
-                                        ).title()}
-                                        filter={overviewFilter!}
-                                        searchQuery={albumSearchQuery}
-                                        sortBy={collectionsSortBy}
-                                        onCreateAlbum={() => {
-                                            setPostCreateAlbumOp(undefined);
-                                            postCreateAlbumHidden.current = false;
-                                            showAlbumNameInput();
-                                        }}
-                                    />
-                                ) : !isInSearchMode &&
                                   !isFirstLoad &&
                                   state.view?.type == "people" &&
                                   !state.view.activePerson ? (
@@ -1251,99 +1123,29 @@ const Page: React.FC = () => {
                                         peopleSortBy={peopleSortBy}
                                     />
                                 ) : (
-                                    <FileListWithViewer
-                                        mode={barMode}
-                                        modePlus={
-                                            isInSearchMode ? "search" : barMode
-                                        }
+                                    <GalleryMedia
+                                        library={sectionLibrary}
+                                        operations={sectionOperations}
+                                        navigation={sectionNavigation}
                                         header={fileListHeader}
-                                        footer={fileListFooter}
-                                        user={user}
-                                        files={filteredFiles}
-                                        enableDownload={true}
-                                        disableGrouping={
-                                            state.searchSuggestion?.type ==
-                                                "clip" ||
-                                            (!isInSearchMode &&
-                                                activeCollection
-                                                    ?.pubMagicMetadata?.data
-                                                    .sortBy === "fileName")
-                                        }
-                                        enableSelect={true}
-                                        selected={selected}
-                                        setSelected={setSelected}
-                                        // TODO: Incorrect assertion, need to update the type
-                                        activeCollectionID={activeCollectionID!}
-                                        activeCollectionSummary={
-                                            activeCollectionSummary
-                                        }
-                                        activePersonID={activePerson?.id}
-                                        isInIncomingSharedCollection={activeCollectionSummary?.attributes.has(
-                                            "sharedIncoming",
-                                        )}
-                                        isInHiddenSection={
-                                            barMode == "hidden-albums"
-                                        }
-                                        onContextMenuAction={
-                                            handleContextMenuAction
-                                        }
-                                        onContextMenuOpenChange={
-                                            setIsContextMenuOpen
-                                        }
-                                        suppressSelectionUI={
-                                            suppressContextSelectionBar
-                                        }
-                                        showAddPersonAction={
-                                            showAddPersonAction
-                                        }
-                                        showEditLocationAction={
-                                            selected.ownCount > 0
-                                        }
-                                        {...{
-                                            favoriteFileIDs,
-                                            collectionNameByID,
-                                            fileNormalCollectionIDs,
-                                            fileCollectionIDs,
-                                            hiddenCollectionIDs,
-                                            pendingFavoriteUpdates,
-                                            pendingVisibilityUpdates,
-                                            onAddSaveGroup,
+                                        source={{
+                                            mode: barMode,
+                                            modePlus: isInSearchMode
+                                                ? "search"
+                                                : barMode,
+                                            files: filteredFiles,
+                                            activeCollectionID:
+                                                activeCollectionID!,
+                                            activeCollectionSummary,
+                                            activePersonID: activePerson?.id,
+                                            disableGrouping:
+                                                state.searchSuggestion?.type ==
+                                                    "clip" ||
+                                                (!isInSearchMode &&
+                                                    activeCollection
+                                                        ?.pubMagicMetadata?.data
+                                                        .sortBy == "fileName"),
                                         }}
-                                        collectionSummaries={
-                                            normalCollectionSummaries
-                                        }
-                                        emailByUserID={state.emailByUserID}
-                                        onToggleFavorite={
-                                            handleFileViewerToggleFavorite
-                                        }
-                                        onFileVisibilityUpdate={
-                                            handleFileViewerFileVisibilityUpdate
-                                        }
-                                        onSendLink={handleFileViewerSendLink}
-                                        onMarkTempDeleted={
-                                            handleMarkTempDeleted
-                                        }
-                                        onSetOpenFileViewer={
-                                            setIsFileViewerOpen
-                                        }
-                                        onRemotePull={remotePull}
-                                        onRemoteFilesPull={remoteFilesPull}
-                                        onVisualFeedback={handleVisualFeedback}
-                                        onAddFileToCollection={
-                                            handleAddSingleFileToCollection
-                                        }
-                                        pendingFileIndex={
-                                            pendingFileNavigation?.fileIndex
-                                        }
-                                        pendingFileSidebar={
-                                            pendingFileNavigation?.sidebar
-                                        }
-                                        pendingHighlightCommentID={
-                                            pendingFileNavigation?.commentID
-                                        }
-                                        onPendingNavigationConsumed={
-                                            handlePendingNavigationConsumed
-                                        }
                                     />
                                 )}
                             </LegacyGallerySection>
@@ -1363,25 +1165,6 @@ const Page: React.FC = () => {
                     }
                 />
 
-                {slideshow &&
-                    slideshow.collectionID === activeCollection?.id &&
-                    !isInSearchMode && (
-                        <AlbumSlideshow
-                            files={slideshow.files}
-                            title={slideshow.title}
-                            onClose={closeSlideshow}
-                        />
-                    )}
-                {activeCollection && editAlbumDetailsVisibilityProps.open && (
-                    <EditAlbumDetailsDialog
-                        key={activeCollection.id}
-                        {...editAlbumDetailsVisibilityProps}
-                        collection={activeCollection}
-                        files={activeCollectionFiles}
-                        initialCoverFile={activeCollectionSummary?.coverFile}
-                        onSubmit={handleEditAlbumDetails}
-                    />
-                )}
                 <AuthenticateUser {...authenticateUserDialogProps} />
             </FullScreenDropZone>
 
@@ -1401,31 +1184,3 @@ const Page: React.FC = () => {
 };
 
 export default Page;
-
-const createAppDownloadFooter = (): FileListHeaderOrFooter => ({
-    component: (
-        <Typography
-            variant="small"
-            sx={{
-                alignSelf: "flex-end",
-                marginInline: "auto",
-                marginBlock: 0.75,
-                textAlign: "center",
-                color: "text.faint",
-            }}
-        >
-            <Trans
-                i18nKey="install_mobile_app"
-                components={{
-                    a: externalLink(
-                        "https://play.google.com/store/apps/details?id=io.ente.photos",
-                    ),
-                    b: externalLink(
-                        "https://apps.apple.com/in/app/ente-photos/id1542026904",
-                    ),
-                }}
-            />
-        </Typography>
-    ),
-    height: 90,
-});
