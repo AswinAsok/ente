@@ -12,6 +12,11 @@ import {
     galleryReducer,
     initialGalleryState,
 } from "../src/components/gallery/reducer";
+import { SectionNavigationContext } from "../src/components/gallery/section-navigation-context";
+import {
+    filteredQuickLinkSummaries,
+    visibleQuickLinks,
+} from "../src/utils/quick-links";
 
 vi.mock("@/utils/quick-links", () => import("../src/utils/quick-links"));
 vi.mock("../src/components/gallery/AlbumsOverview", () => ({
@@ -19,6 +24,9 @@ vi.mock("../src/components/gallery/AlbumsOverview", () => ({
 }));
 vi.mock("../src/components/gallery/PublicLinkDetails", () => ({
     PublicLinkDetails: vi.fn(() => null),
+}));
+vi.mock("../src/components/gallery/LinksNavigation", () => ({
+    LinksNavigation: () => null,
 }));
 
 beforeEach(() => vi.clearAllMocks());
@@ -92,13 +100,29 @@ const props = (
         uncategorizedCollectionSummaryID:
             state.uncategorizedCollectionSummaryID,
         selectedLinkID: undefined,
-        searchQuery: "",
+        showContent: true,
         sortBy: "updation-time-desc",
+        onChangeSortBy: vi.fn(),
         onCreateAlbum: vi.fn(),
         setBlockingLoad: vi.fn(),
         onRemotePull: vi.fn().mockResolvedValue(undefined),
     };
 };
+
+const renderView = (input: ComponentProps<typeof LinksView>) =>
+    renderToStaticMarkup(
+        <SectionNavigationContext.Provider
+            value={{
+                container: null,
+                presentation: {
+                    collapsed: false,
+                    mobileDrawerProps: { open: false, onClose: vi.fn() },
+                },
+            }}
+        >
+            <LinksView {...input} />
+        </SectionNavigationContext.Provider>,
+    );
 
 test("derives the overview from library data with shared sorting and search", () => {
     const input = props([
@@ -111,25 +135,42 @@ test("derives the overview from library data with shared sorting and search", ()
     const summaries = new Map(input.collectionSummaries);
     summaries.set(2, { ...summaries.get(2)!, sortPriority: 7 });
 
-    renderToStaticMarkup(
-        <LinksView
-            {...input}
-            collectionSummaries={summaries}
-            searchQuery="  SUMMER  "
-            sortBy="name-asc"
-        />,
-    );
+    const filtered = filteredQuickLinkSummaries({
+        links: visibleQuickLinks(
+            input.collections,
+            input.user.id,
+            input.hiddenCollectionIDs,
+        ),
+        collectionSummaries: summaries,
+        uncategorizedCollectionSummaryID:
+            input.uncategorizedCollectionSummaryID,
+        searchQuery: "  SUMMER  ",
+        sortBy: "name-asc",
+    });
+    expect(filtered.map(({ id }) => id)).toEqual([2, 1]);
+
+    renderView({
+        ...input,
+        collectionSummaries: summaries,
+        sortBy: "name-asc",
+    });
 
     const overview = vi.mocked(AlbumsOverview).mock.calls[0]![0];
-    expect(overview.albums.map(({ id }) => id)).toEqual([2, 1]);
+    expect(overview.albums.map(({ id }) => id)).toEqual([2, 1, 3]);
     expect(overview.filter).toBe("links");
-    expect(overview.searchQuery).toBe("  SUMMER  ");
+    expect(overview.searchQuery).toBe("");
     expect(overview.sortBy).toBe("name-asc");
     expect(overview.onRemotePull).toBe(input.onRemotePull);
     expect(overview.onCreateAlbum).toBe(input.onCreateAlbum);
     expect(PublicLinkDetails).not.toHaveBeenCalled();
     expect(summaries.get(2)?.sortPriority).toBe(7);
     expect(input.collections.map(({ id }) => id)).toEqual([1, 2, 3, 4, 5]);
+});
+
+test("hides content while the section is covered by another view", () => {
+    renderView({ ...props(), showContent: false });
+    expect(AlbumsOverview).not.toHaveBeenCalled();
+    expect(PublicLinkDetails).not.toHaveBeenCalled();
 });
 
 test.each([0, 17])(
@@ -153,16 +194,14 @@ test.each([0, 17])(
         const summaries = new Map(input.collectionSummaries);
         summaries.set(1, { ...summaries.get(1)!, fileCount, coverFile });
 
-        renderToStaticMarkup(
-            <LinksView
-                {...input}
-                selectedLinkID={1}
-                collectionSummaries={summaries}
-                hiddenFileIDs={new Set([2])}
-                tempDeletedFileIDs={new Set([3])}
-                tempHiddenFileIDs={new Set([4])}
-            />,
-        );
+        renderView({
+            ...input,
+            selectedLinkID: 1,
+            collectionSummaries: summaries,
+            hiddenFileIDs: new Set([2]),
+            tempDeletedFileIDs: new Set([3]),
+            tempHiddenFileIDs: new Set([4]),
+        });
 
         const details = vi.mocked(PublicLinkDetails).mock.calls[0]![0];
         expect(details.collection.id).toBe(1);
@@ -178,13 +217,7 @@ test.each([0, 17])(
 
 test("uses the filtered detail file count when no summary exists", () => {
     const input = props(undefined, [file(1), file(2), file(3, 2)]);
-    renderToStaticMarkup(
-        <LinksView
-            {...input}
-            selectedLinkID={1}
-            collectionSummaries={new Map()}
-        />,
-    );
+    renderView({ ...input, selectedLinkID: 1, collectionSummaries: new Map() });
     const details = vi.mocked(PublicLinkDetails).mock.calls[0]![0];
     expect(details.fileCount).toBe(2);
     expect(details.coverFile).toBeUndefined();
@@ -200,13 +233,11 @@ test.each(["removed", "unlinked", "hidden", "shared", "other-owner"])(
         const input = props(
             change == "removed" ? [link(2)] : [updated, link(2)],
         );
-        renderToStaticMarkup(
-            <LinksView
-                {...input}
-                selectedLinkID={1}
-                hiddenCollectionIDs={new Set(change == "hidden" ? [1] : [])}
-            />,
-        );
+        renderView({
+            ...input,
+            selectedLinkID: 1,
+            hiddenCollectionIDs: new Set(change == "hidden" ? [1] : []),
+        });
         const overview = vi.mocked(AlbumsOverview).mock.calls[0]![0];
         expect(overview.albums.map(({ id }) => id)).toEqual([2]);
         expect(PublicLinkDetails).not.toHaveBeenCalled();

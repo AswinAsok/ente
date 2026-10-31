@@ -8,6 +8,7 @@ import {
     GalleryBarImpl,
     type GalleryBarImplProps,
 } from "../src/components/gallery/BarImpl";
+import { LinksNavigation } from "../src/components/gallery/LinksNavigation";
 import {
     PhotosNavigationContext,
     type PhotosNavigationActions,
@@ -146,16 +147,33 @@ const renderSearch = (
     const Sidebar = () => {
         const data = useAlbumNavigationData({
             ...props,
+            mode: mode == "links" ? undefined : mode,
             collectionSummaries: new Map(summaries.map((cs) => [cs.id, cs])),
         });
         return (
             <ThemeProvider theme={photosTheme}>
                 <PhotosNavigationContext.Provider value={navigation}>
-                    <GalleryBarImpl
-                        {...props}
-                        {...data}
-                        collectionSummaries={data.sidebarCollectionSummaries}
-                    />
+                    {mode == "links" ? (
+                        <LinksNavigation
+                            {...props}
+                            selectedLinkID={undefined}
+                            searchQuery={query}
+                            onSearchQueryChange={vi.fn()}
+                            collectionSummaries={summaries.filter(({ name }) =>
+                                name
+                                    .toLowerCase()
+                                    .includes(query.trim().toLowerCase()),
+                            )}
+                        />
+                    ) : (
+                        <GalleryBarImpl
+                            {...props}
+                            {...data}
+                            collectionSummaries={
+                                data.sidebarCollectionSummaries
+                            }
+                        />
+                    )}
                 </PhotosNavigationContext.Provider>
             </ThemeProvider>
         );

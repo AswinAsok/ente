@@ -41,24 +41,26 @@ import {
     useCallback,
     useEffect,
     useImperativeHandle,
+    useMemo,
     useState,
     type ReactNode,
 } from "react";
 
 import type { RemotePullOpts } from ".";
-import {
-    GalleryBarImpl,
-    type GalleryBarImplProps,
-    type GalleryBarPresentationProps,
-} from "./BarImpl";
+import { GalleryBarImpl, type GalleryBarImplProps } from "./BarImpl";
+import type { GalleryBarPresentationProps } from "./NavigationPrimitives";
 import { NavigationSlide } from "./NavigationSlide";
 import { usePhotosNavigation } from "./PhotosNavigationContext";
 import type { GalleryBarMode } from "./reducer";
+import { SectionNavigationContext } from "./section-navigation-context";
 import { useNavigationContentMotion } from "./use-navigation-content-motion";
 
 type GalleryNavigation = Omit<
     GalleryBarImplProps,
-    keyof GalleryBarPresentationProps | "mode" | "onCreateAlbum"
+    | keyof GalleryBarPresentationProps
+    | "mode"
+    | "onCreateAlbum"
+    | "navigationOverride"
 > & { onRemotePull: (opts?: RemotePullOpts) => Promise<void> };
 
 type PhotosNavigationShellProps = SearchBarProps & {
@@ -80,6 +82,7 @@ export const PhotosNavigationShell: React.FC<
             isFirstLoad: boolean;
             alternateHeader: ReactNode;
             galleryNavigation: GalleryNavigation | undefined;
+            sectionNavigation?: { activeCollectionID: number | undefined };
             collectionNameByID: Map<number, string>;
             onAuthenticateUser: () => Promise<boolean>;
         }
@@ -89,6 +92,7 @@ export const PhotosNavigationShell: React.FC<
     isFirstLoad,
     alternateHeader,
     galleryNavigation,
+    sectionNavigation,
     collectionNameByID,
     onAuthenticateUser,
     children,
@@ -116,8 +120,11 @@ export const PhotosNavigationShell: React.FC<
     const isOffline = useIsOffline();
     const reduceMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
     const [navigationCollapsed, setNavigationCollapsed] = useState(false);
+    const [sectionNavigationContainer, setSectionNavigationContainer] =
+        useState<HTMLElement | null>(null);
     const mobile = useMediaQuery(useTheme().breakpoints.down("md"));
-    const navigationAvailable = !!galleryNavigation && !props.isInSearchMode;
+    const navigation = sectionNavigation ?? galleryNavigation;
+    const navigationAvailable = !!navigation && !props.isInSearchMode;
     const panelOpen = navigationAvailable && !navigationCollapsed;
     const contentRef = useNavigationContentMotion(
         `${mobile}-${panelOpen}`,
@@ -126,6 +133,13 @@ export const PhotosNavigationShell: React.FC<
     const { show: showMobileNavigation, props: mobileDrawerProps } =
         useModalVisibility();
     const { onClose: closeMobileNavigation } = mobileDrawerProps;
+    const sectionNavigationSlot = useMemo(
+        () => ({
+            container: sectionNavigationContainer,
+            presentation: { collapsed: !panelOpen, mobileDrawerProps },
+        }),
+        [sectionNavigationContainer, panelOpen, mobileDrawerProps],
+    );
     const navigationOpen =
         navigationAvailable && (mobile ? mobileDrawerProps.open : panelOpen);
     const toggleNavigation = () => {
@@ -138,10 +152,10 @@ export const PhotosNavigationShell: React.FC<
     };
     const selectCreatedCollection = useCallback(
         (id: number) => {
-            if (galleryNavigation) selectCollection(id);
+            if (navigation) selectCollection(id);
             closeMobileNavigation();
         },
-        [galleryNavigation, selectCollection, closeMobileNavigation],
+        [navigation, selectCollection, closeMobileNavigation],
     );
     const { show: showAlbumNameInput, props: albumNameInputVisibilityProps } =
         useModalVisibility();
@@ -165,15 +179,14 @@ export const PhotosNavigationShell: React.FC<
         const reopeningSection =
             mobile &&
             mode == "albums" &&
-            galleryNavigation &&
+            navigation &&
             !props.isInSearchMode &&
             (props.mode == "hidden-albums" || props.mode == "archive-albums");
         if (
-            galleryNavigation &&
+            navigation &&
             !props.isInSearchMode &&
             ((props.mode == mode &&
-                galleryNavigation.activeCollectionID !=
-                    PseudoCollectionID.all) ||
+                navigation.activeCollectionID != PseudoCollectionID.all) ||
                 reopeningSection)
         ) {
             if (mobile) {
@@ -188,184 +201,210 @@ export const PhotosNavigationShell: React.FC<
         setNavigationCollapsed(false);
         if (mobile) showMobileNavigation();
     };
-    const galleryBar = galleryNavigation && (
+    const sectionNavigationTarget = sectionNavigation ? (
+        <Box
+            ref={setSectionNavigationContainer}
+            sx={mobile ? { display: "contents" } : { height: "100%" }}
+        />
+    ) : undefined;
+    const galleryBar = galleryNavigation ? (
         <GalleryBarImpl
             {...galleryNavigation}
             mode={props.mode}
             collapsed={!panelOpen}
             mobileDrawerProps={mobileDrawerProps}
             onCreateAlbum={openAlbumCreation}
+            navigationOverride={sectionNavigationTarget}
         />
+    ) : (
+        sectionNavigationTarget
     );
     return (
-        <Stack
-            sx={(theme) => ({
-                flex: 1,
-                minWidth: 0,
-                minHeight: 0,
-                bgcolor: "#F4F4F4",
-                ...theme.applyStyles("light", {
-                    "& > :first-child .MuiButton-colorSecondary": {
-                        "--mui-palette-secondary-main": "#FFFFFF",
-                    },
-                }),
-                ...theme.applyStyles("dark", { bgcolor: "#161616" }),
-            })}
-        >
-            <NavbarBase
-                sx={{
-                    pl: { xs: "9px", sm: "16px" },
-                    pr: { xs: "12px", sm: "16px" },
-                    flexBasis: { xs: "60px", sm: "76px" },
-                    borderBottom: "none",
-                }}
-            >
-                {alternateHeader ?? (
-                    <NormalHeaderContents
-                        onUpload={props.onUpload}
-                        {...{
-                            navigationAvailable,
-                            navigationOpen,
-                            toggleNavigation,
-                        }}
-                    />
-                )}
-            </NavbarBase>
+        <SectionNavigationContext.Provider value={sectionNavigationSlot}>
             <Stack
-                direction="row"
-                sx={{
+                sx={(theme) => ({
                     flex: 1,
                     minWidth: 0,
                     minHeight: 0,
-                    overflow: "clip",
-                    p: { xs: "0 8px 8px 0", sm: "0 11px 11px 0" },
-                }}
+                    bgcolor: "#F4F4F4",
+                    ...theme.applyStyles("light", {
+                        "& > :first-child .MuiButton-colorSecondary": {
+                            "--mui-palette-secondary-main": "#FFFFFF",
+                        },
+                    }),
+                    ...theme.applyStyles("dark", { bgcolor: "#161616" }),
+                })}
             >
-                <NavigationSlide
-                    open
-                    width={{ xs: 56, sm: 72 }}
-                    reduceMotion={reduceMotion}
-                    rail
+                <NavbarBase
+                    sx={{
+                        pl: { xs: "9px", sm: "16px" },
+                        pr: { xs: "12px", sm: "16px" },
+                        flexBasis: { xs: "60px", sm: "76px" },
+                        borderBottom: "none",
+                    }}
                 >
-                    <Box
-                        component="nav"
-                        sx={(theme) => ({
-                            display: "flex",
-                            height: "100%",
-                            flexDirection: "column",
-                            alignItems: "center",
-                            flexShrink: 0,
-                            width: "100%",
-                            px: { xs: "9px", sm: "14px" },
-                            gap: "12px",
-                            ...theme.applyStyles("light", {
-                                "& .MuiButton-colorSecondary": {
-                                    "--mui-palette-secondary-main": "#FFFFFF",
-                                },
-                            }),
-                        })}
-                    >
-                        {alternateHeader == null && (
-                            <NormalNavigationRail
-                                {...props}
-                                isSettingsOpen={sidebarVisibilityProps.open}
-                                onSidebar={() => showSettings()}
-                                onShowMap={() => {
-                                    showLibraryMap();
-                                    setNavigationCollapsed(false);
-                                    if (mobile) showMobileNavigation();
-                                }}
-                                isHome={
-                                    !props.isMapSelected &&
-                                    props.mode == "albums" &&
-                                    !props.isInSearchMode &&
-                                    galleryNavigation?.activeCollectionID ==
-                                        PseudoCollectionID.all
-                                }
-                                onChangeMode={handleChangeMode}
-                                opensDialog={mobile}
-                                navigationOpen={
-                                    !props.isMapSelected &&
-                                    !!galleryNavigation &&
-                                    (mobile
-                                        ? mobileDrawerProps.open
-                                        : !navigationCollapsed)
-                                }
-                            />
-                        )}
-                    </Box>
-                </NavigationSlide>
+                    {alternateHeader ?? (
+                        <NormalHeaderContents
+                            onUpload={props.onUpload}
+                            {...{
+                                navigationAvailable,
+                                navigationOpen,
+                                toggleNavigation,
+                            }}
+                        />
+                    )}
+                </NavbarBase>
                 <Stack
+                    direction="row"
                     sx={{
                         flex: 1,
                         minWidth: 0,
                         minHeight: 0,
-                        flexDirection: { xs: "column", md: "row" },
+                        overflow: "clip",
+                        p: { xs: "0 8px 8px 0", sm: "0 11px 11px 0" },
                     }}
                 >
-                    {galleryNavigation && !props.isInSearchMode && (
-                        <>
-                            <NavigationSlide
-                                open={panelOpen}
-                                width={328}
-                                reduceMotion={reduceMotion}
-                                disabled={mobile}
-                            >
-                                {galleryBar}
-                            </NavigationSlide>
-                            <CreateAlbumDialog
-                                {...albumNameInputVisibilityProps}
-                                isHidden={createInHiddenSection}
-                                onRemotePull={galleryNavigation.onRemotePull}
-                                onSelectCollectionID={selectCreatedCollection}
-                            />
-                        </>
-                    )}
-                    <Stack
-                        ref={contentRef}
-                        sx={{ flex: 1, minWidth: 0, minHeight: 0, gap: "8px" }}
+                    <NavigationSlide
+                        open
+                        width={{ xs: 56, sm: 72 }}
+                        reduceMotion={reduceMotion}
+                        rail
                     >
-                        <Stack
+                        <Box
+                            component="nav"
                             sx={(theme) => ({
-                                flex: 1,
-                                minWidth: 0,
-                                minHeight: 0,
-                                pt: props.isMapView
-                                    ? 0
-                                    : {
-                                          xs: `${thumbnailGridPadding}px`,
-                                          md: "36px",
-                                      },
-                                px: props.isMapView ? 0 : { xs: 0, md: "12px" },
-                                "--mui-palette-background-default": "#FFFFFF",
-                                bgcolor: "background.default",
-                                borderRadius: "20px",
-                                overflow: "hidden",
-                                ...theme.applyStyles("dark", {
-                                    "--mui-palette-background-default":
-                                        "#212121",
+                                display: "flex",
+                                height: "100%",
+                                flexDirection: "column",
+                                alignItems: "center",
+                                flexShrink: 0,
+                                width: "100%",
+                                px: { xs: "9px", sm: "14px" },
+                                gap: "12px",
+                                ...theme.applyStyles("light", {
+                                    "& .MuiButton-colorSecondary": {
+                                        "--mui-palette-secondary-main":
+                                            "#FFFFFF",
+                                    },
                                 }),
                             })}
                         >
-                            {children}
+                            {alternateHeader == null && (
+                                <NormalNavigationRail
+                                    {...props}
+                                    isSettingsOpen={sidebarVisibilityProps.open}
+                                    onSidebar={() => showSettings()}
+                                    onShowMap={() => {
+                                        showLibraryMap();
+                                        setNavigationCollapsed(false);
+                                        if (mobile) showMobileNavigation();
+                                    }}
+                                    isHome={
+                                        !props.isMapSelected &&
+                                        props.mode == "albums" &&
+                                        !props.isInSearchMode &&
+                                        galleryNavigation?.activeCollectionID ==
+                                            PseudoCollectionID.all
+                                    }
+                                    onChangeMode={handleChangeMode}
+                                    opensDialog={mobile}
+                                    navigationOpen={
+                                        !props.isMapSelected &&
+                                        !!navigation &&
+                                        (mobile
+                                            ? mobileDrawerProps.open
+                                            : !navigationCollapsed)
+                                    }
+                                />
+                            )}
+                        </Box>
+                    </NavigationSlide>
+                    <Stack
+                        sx={{
+                            flex: 1,
+                            minWidth: 0,
+                            minHeight: 0,
+                            flexDirection: { xs: "column", md: "row" },
+                        }}
+                    >
+                        {navigationAvailable && (
+                            <>
+                                <NavigationSlide
+                                    open={panelOpen}
+                                    width={328}
+                                    reduceMotion={reduceMotion}
+                                    disabled={mobile}
+                                >
+                                    {galleryBar}
+                                </NavigationSlide>
+                                {galleryNavigation && (
+                                    <CreateAlbumDialog
+                                        {...albumNameInputVisibilityProps}
+                                        isHidden={createInHiddenSection}
+                                        onRemotePull={
+                                            galleryNavigation.onRemotePull
+                                        }
+                                        onSelectCollectionID={
+                                            selectCreatedCollection
+                                        }
+                                    />
+                                )}
+                            </>
+                        )}
+                        <Stack
+                            ref={contentRef}
+                            sx={{
+                                flex: 1,
+                                minWidth: 0,
+                                minHeight: 0,
+                                gap: "8px",
+                            }}
+                        >
+                            <Stack
+                                sx={(theme) => ({
+                                    flex: 1,
+                                    minWidth: 0,
+                                    minHeight: 0,
+                                    pt: props.isMapView
+                                        ? 0
+                                        : {
+                                              xs: `${thumbnailGridPadding}px`,
+                                              md: "36px",
+                                          },
+                                    px: props.isMapView
+                                        ? 0
+                                        : { xs: 0, md: "12px" },
+                                    "--mui-palette-background-default":
+                                        "#FFFFFF",
+                                    bgcolor: "background.default",
+                                    borderRadius: "20px",
+                                    overflow: "hidden",
+                                    ...theme.applyStyles("dark", {
+                                        "--mui-palette-background-default":
+                                            "#212121",
+                                    }),
+                                })}
+                            >
+                                {children}
+                            </Stack>
+                            {isFirstLoad && <FirstLoadMessage />}
+                            {isOffline && <OfflineMessage />}
                         </Stack>
-                        {isFirstLoad && <FirstLoadMessage />}
-                        {isOffline && <OfflineMessage />}
                     </Stack>
                 </Stack>
+                <Sidebar
+                    {...sidebarVisibilityProps}
+                    pendingAction={pendingSidebarAction}
+                    onActionHandled={handleSidebarActionHandled}
+                    onShowLargeFiles={() => showCleanupView("large-files")}
+                    onShowDuplicates={() => showCleanupView("duplicates")}
+                    collectionNameByID={collectionNameByID}
+                    onAuthenticateUser={onAuthenticateUser}
+                    setLoading={setSettingsLoading}
+                />
+                {settingsLoading && <TranslucentLoadingOverlay />}
             </Stack>
-            <Sidebar
-                {...sidebarVisibilityProps}
-                pendingAction={pendingSidebarAction}
-                onActionHandled={handleSidebarActionHandled}
-                onShowLargeFiles={() => showCleanupView("large-files")}
-                onShowDuplicates={() => showCleanupView("duplicates")}
-                collectionNameByID={collectionNameByID}
-                onAuthenticateUser={onAuthenticateUser}
-                setLoading={setSettingsLoading}
-            />
-            {settingsLoading && <TranslucentLoadingOverlay />}
-        </Stack>
+        </SectionNavigationContext.Provider>
     );
 };
 

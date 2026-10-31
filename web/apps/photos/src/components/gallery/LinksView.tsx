@@ -1,18 +1,22 @@
-import { visibleQuickLinks } from "@/utils/quick-links";
+import {
+    filteredQuickLinkSummaries,
+    visibleQuickLinks,
+} from "@/utils/quick-links";
 import type { LocalUser } from "ente-accounts/services/user";
 import type { Collection } from "ente-media/collection";
 import type { EnteFile } from "ente-media/file";
-import {
-    PseudoCollectionID,
-    sortCollectionSummaries,
-    type CollectionSummary,
-    type CollectionsSortBy,
+import type {
+    CollectionSummary,
+    CollectionsSortBy,
 } from "ente-new/photos/services/collection-summary";
 import { t } from "i18next";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import type { RemotePullOpts } from ".";
 import { AlbumsOverview } from "./AlbumsOverview";
+import { LinksNavigation } from "./LinksNavigation";
 import { PublicLinkDetails } from "./PublicLinkDetails";
+import { useSectionNavigation } from "./section-navigation-context";
 
 interface LinksViewProps {
     user: LocalUser;
@@ -25,8 +29,9 @@ interface LinksViewProps {
     tempHiddenFileIDs: ReadonlySet<number>;
     uncategorizedCollectionSummaryID: number;
     selectedLinkID: number | undefined;
-    searchQuery: string;
+    showContent: boolean;
     sortBy: CollectionsSortBy;
+    onChangeSortBy: (by: CollectionsSortBy) => void;
     onCreateAlbum: () => void;
     setBlockingLoad: (value: boolean) => void;
     onRemotePull: (opts?: RemotePullOpts) => Promise<void>;
@@ -43,12 +48,15 @@ export const LinksView = ({
     tempHiddenFileIDs,
     uncategorizedCollectionSummaryID,
     selectedLinkID,
-    searchQuery,
+    showContent,
     sortBy,
+    onChangeSortBy,
     onCreateAlbum,
     setBlockingLoad,
     onRemotePull,
 }: LinksViewProps) => {
+    const [searchQuery, setSearchQuery] = useState("");
+    const navigationSlot = useSectionNavigation();
     const links = useMemo(
         () => visibleQuickLinks(collections, user.id, hiddenCollectionIDs),
         [collections, user.id, hiddenCollectionIDs],
@@ -75,32 +83,25 @@ export const LinksView = ({
             tempHiddenFileIDs,
         ],
     );
-    const overviewLinks = useMemo(() => {
-        const summaries = links.flatMap((link) => {
-            const summary = collectionSummaries.get(link.id);
-            return summary ? [summary] : [];
-        });
-        const query = searchQuery.trim().toLowerCase();
-        return sortCollectionSummaries(summaries, sortBy)
-            .sort((a, b) => b.sortPriority - a.sortPriority)
-            .filter(
-                (summary) =>
-                    summary.id !== uncategorizedCollectionSummaryID &&
-                    summary.id !== PseudoCollectionID.hiddenItems &&
-                    summary.id !== PseudoCollectionID.archiveItems &&
-                    summary.id !== PseudoCollectionID.trash &&
-                    !summary.attributes.has("hideFromCollectionBar") &&
-                    summary.name.toLowerCase().includes(query),
-            );
-    }, [
-        links,
-        collectionSummaries,
-        searchQuery,
-        sortBy,
-        uncategorizedCollectionSummaryID,
-    ]);
+    const overviewLinks = useMemo(
+        () =>
+            filteredQuickLinkSummaries({
+                links,
+                collectionSummaries,
+                uncategorizedCollectionSummaryID,
+                searchQuery,
+                sortBy,
+            }),
+        [
+            links,
+            collectionSummaries,
+            searchQuery,
+            sortBy,
+            uncategorizedCollectionSummaryID,
+        ],
+    );
 
-    return selectedLink ? (
+    const content = selectedLink ? (
         <PublicLinkDetails
             key={selectedLink.id}
             collection={selectedLink}
@@ -123,5 +124,23 @@ export const LinksView = ({
             onCreateAlbum={onCreateAlbum}
             onRemotePull={onRemotePull}
         />
+    );
+    return (
+        <>
+            {navigationSlot.container &&
+                createPortal(
+                    <LinksNavigation
+                        {...navigationSlot.presentation}
+                        collectionSummaries={overviewLinks}
+                        selectedLinkID={selectedLinkID}
+                        searchQuery={searchQuery}
+                        onSearchQueryChange={setSearchQuery}
+                        collectionsSortBy={sortBy}
+                        onChangeCollectionsSortBy={onChangeSortBy}
+                    />,
+                    navigationSlot.container,
+                )}
+            {showContent && content}
+        </>
     );
 };

@@ -36,6 +36,7 @@ const navigationData = (
             uncategorizedCollectionSummaryID: 99,
             albumFilter: "ente",
             albumSearchQuery: "",
+            collectionsSortBy: "updation-time-desc",
             ...options,
         });
         return null;
@@ -54,10 +55,17 @@ describe("album navigation data", () => {
             album(3),
         ];
         const data = navigationData(summaries);
-        expect(data.collectionsSortBy).toBe("updation-time-desc");
         expect(ids(data.sidebarCollectionSummaries)).toEqual([2, 3, 1]);
         expect(ids(data.overviewAlbums)).toEqual([2, 3, 1]);
         expect(ids(summaries)).toEqual([1, 2, 3]);
+    });
+
+    test("uses the supplied shared sort order", () => {
+        const data = navigationData([album(1), album(2)], {
+            collectionsSortBy: "name-asc",
+        });
+        expect(ids(data.sidebarCollectionSummaries)).toEqual([1, 2]);
+        expect(ids(data.overviewAlbums)).toEqual([1, 2]);
     });
 
     test("searches across sidebar groups while the overview follows the selected group", () => {
