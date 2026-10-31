@@ -1,7 +1,9 @@
+import { GalleryDownloadNotifications } from "@/components/gallery/GalleryDownloadNotifications";
 import { useCollectionOperations } from "@/components/gallery/hooks/use-collection-operations";
 import { useFileContextActions } from "@/components/gallery/hooks/use-file-context-actions";
 import { useFileMutations } from "@/components/gallery/hooks/use-file-mutations";
 import { useGallerySelection } from "@/components/gallery/hooks/use-gallery-selection";
+import { useGalleryUploads } from "@/components/gallery/hooks/use-gallery-uploads";
 import { useSelectedFileOperations } from "@/components/gallery/hooks/use-selected-file-operations";
 // TODO: Audit this file (the code here is mostly fine, but needs revisiting
 // the file it depends on have been audited and their interfaces fixed).
@@ -12,7 +14,6 @@ import type { FileListHeaderOrFooter } from "@/components/FileList";
 import { FileListWithViewer } from "@/components/FileListWithViewer";
 import { QuickLinkCreatedNotification } from "@/components/QuickLinkCreatedNotification";
 import { SelectedFileOptions } from "@/components/SelectedFileOptions";
-import { Upload } from "@/components/Upload";
 import { AlbumSlideshow } from "@/components/collections/AlbumSlideshow";
 import { CollectionMap } from "@/components/collections/CollectionMap";
 import {
@@ -61,9 +62,7 @@ import { Typography } from "@mui/material";
 import { TranslucentLoadingOverlay } from "ente-base/components/loaders";
 import { useModalVisibility } from "ente-base/components/utils/modal";
 import { useBaseContext } from "ente-base/context";
-import { DownloadStatusNotifications } from "ente-gallery/components/DownloadStatusNotifications";
 import { FullScreenDropZone } from "ente-gallery/components/FullScreenDropZone";
-import type { UploadTypeSelectorIntent } from "ente-gallery/components/Upload";
 import {
     isSaveCancelled,
     isSaveComplete,
@@ -91,16 +90,13 @@ import { filterSearchableFiles } from "ente-new/photos/services/search";
 import type { SearchOption } from "ente-new/photos/services/search/types";
 import { updateMapEnabled } from "ente-new/photos/services/settings";
 import { usePhotosAppContext } from "ente-new/photos/types/context";
-import { t } from "i18next";
 import { useRouter } from "next/router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { FileWithPath } from "react-dropzone";
 import { Trans } from "react-i18next";
 
 const Page: React.FC = () => {
     const { onGenericError } = useBaseContext();
-    const { showLoadingBar, hideLoadingBar, watchFolderView } =
-        usePhotosAppContext();
+    const { showLoadingBar, hideLoadingBar } = usePhotosAppContext();
 
     const {
         state,
@@ -119,19 +115,12 @@ const Page: React.FC = () => {
     const [isContextMenuOpen, setIsContextMenuOpen] = useState(false);
     const { selected, setSelected, clearSelection } = useGallerySelection();
     const [blockingLoad, setBlockingLoad] = useState(false);
-    const [shouldDisableDropzone, setShouldDisableDropzone] = useState(false);
-    const [dragAndDropFiles, setDragAndDropFiles] = useState<FileWithPath[]>(
-        [],
-    );
     const [isFileViewerOpen, setIsFileViewerOpen] = useState(false);
     const [pendingFileNavigation, setPendingFileNavigation] = useState<{
         fileIndex: number;
         sidebar?: FileViewerInitialSidebar;
         commentID?: string;
     }>();
-    const [uploadTypeSelectorView, setUploadTypeSelectorView] = useState(false);
-    const [uploadTypeSelectorIntent, setUploadTypeSelectorIntent] =
-        useState<UploadTypeSelectorIntent>("upload");
     const [fileListHeader, setFileListHeader] = useState<
         FileListHeaderOrFooter | undefined
     >(undefined);
@@ -615,11 +604,22 @@ const Page: React.FC = () => {
         },
     });
 
-    const openUploader = (intent?: UploadTypeSelectorIntent) => {
-        if (uploadManager.isUploadInProgress()) return;
-        setUploadTypeSelectorView(true);
-        setUploadTypeSelectorIntent(intent ?? "upload");
-    };
+    const { openUploader, uploadTypeSelectorView, uploadUI, dropzoneProps } =
+        useGalleryUploads({
+            user,
+            activeCollection,
+            isFirstUpload: haveOnlySystemCollections(normalCollectionSummaries),
+            isInHiddenSection: barMode == "hidden-albums",
+            onUploadFile: (file) => dispatch({ type: "uploadFile", file }),
+            onShowSubscription: () =>
+                navigationRef.current?.showSettings("subscription"),
+            onRemotePull: remotePull,
+            onRemoteFilesPull: remoteFilesPull,
+            onOpenCollectionSelector: handleOpenCollectionSelector,
+            onCloseCollectionSelector: handleCloseCollectionSelector,
+            onShowSessionExpiredDialog: showSessionExpiredDialog,
+            setLoading: setBlockingLoad,
+        });
 
     const handleShowCollectionSummaryWithID = useCallback(
         (collectionSummaryID: number | undefined) => {
@@ -952,19 +952,6 @@ const Page: React.FC = () => {
         () => handleChangeBarMode("links"),
         [handleChangeBarMode],
     );
-    const handleDownloadStatusNotificationsShowCollectionSummary = useCallback(
-        (
-            collectionSummaryID: number | undefined,
-            isHiddenCollectionSummary: boolean | undefined,
-        ) => {
-            void showCollectionSummary(
-                collectionSummaryID,
-                isHiddenCollectionSummary,
-            );
-        },
-        [showCollectionSummary],
-    );
-
     const navigationActions = useMemo<PhotosNavigationActions>(
         () => ({
             goHome: handleGoHome,
@@ -1037,24 +1024,16 @@ const Page: React.FC = () => {
     return (
         <PhotosNavigationContext.Provider value={navigationActions}>
             <FullScreenDropZone
-                message={
-                    watchFolderView
-                        ? t("watch_folder_dropzone_hint")
-                        : undefined
-                }
+                {...dropzoneProps}
                 disabled={
-                    shouldDisableDropzone || !!slideshow || isCleanupViewOpen
+                    dropzoneProps.disabled || !!slideshow || isCleanupViewOpen
                 }
-                onDrop={setDragAndDropFiles}
             >
                 {blockingLoad && <TranslucentLoadingOverlay />}
                 {collectionOperationDialogs}
                 {selectedFileOperationDialogs}
-                <DownloadStatusNotifications
+                <GalleryDownloadNotifications
                     {...{ saveGroups, onRemoveSaveGroup }}
-                    onShowCollectionSummary={
-                        handleDownloadStatusNotificationsShowCollectionSummary
-                    }
                 />
 
                 <PhotosNavigationShell
@@ -1365,36 +1344,7 @@ const Page: React.FC = () => {
                         )
                     }
                 </PhotosNavigationShell>
-                <Upload
-                    {...{
-                        user,
-                        dragAndDropFiles,
-                        uploadTypeSelectorIntent,
-                        uploadTypeSelectorView,
-                    }}
-                    isFirstUpload={haveOnlySystemCollections(
-                        normalCollectionSummaries,
-                    )}
-                    activeCollection={activeCollection}
-                    closeUploadTypeSelector={setUploadTypeSelectorView.bind(
-                        null,
-                        false,
-                    )}
-                    setLoading={setBlockingLoad}
-                    setShouldDisableDropzone={setShouldDisableDropzone}
-                    onRemotePull={remotePull}
-                    onRemoteFilesPull={remoteFilesPull}
-                    onOpenCollectionSelector={handleOpenCollectionSelector}
-                    onCloseCollectionSelector={handleCloseCollectionSelector}
-                    onUploadFile={(file) =>
-                        dispatch({ type: "uploadFile", file })
-                    }
-                    onShowSubscription={() =>
-                        navigationRef.current?.showSettings("subscription")
-                    }
-                    onShowSessionExpiredDialog={showSessionExpiredDialog}
-                    isInHiddenSection={barMode == "hidden-albums"}
-                />
+                {uploadUI}
                 <DesktopWhatsNew />
                 <PeopleConsentDialog
                     {...peopleConsentVisibilityProps}
