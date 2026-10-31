@@ -67,7 +67,7 @@ type GalleryView =
           activePerson: Person | undefined;
       };
 
-interface GalleryState {
+export interface GalleryState {
     user: LocalUser | undefined;
     familyData: FamilyData | undefined;
 
@@ -124,7 +124,7 @@ interface GalleryState {
     filteredFiles: EnteFile[];
 }
 
-type GalleryAction =
+export type GalleryAction =
     | {
           type: "mount";
           user: LocalUser;
