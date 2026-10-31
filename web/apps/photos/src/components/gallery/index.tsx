@@ -45,7 +45,7 @@ export interface RemotePullOpts {
 export type SelectionContext =
     | {
           mode: "albums" | "hidden-albums" | "archive-albums";
-          collectionID: number;
+          collectionID: number | undefined;
       }
     | { mode: "people"; personID: string };
 

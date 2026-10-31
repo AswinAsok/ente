@@ -1,11 +1,11 @@
 import type { FileListHeaderOrFooter } from "@/components/FileList";
+import { AlbumContentHeader } from "@/components/collections/AlbumContentHeader";
 import { AlbumSlideshow } from "@/components/collections/AlbumSlideshow";
 import { CollectionMap } from "@/components/collections/CollectionMap";
 import {
     EditAlbumDetailsDialog,
     type AlbumDetails,
 } from "@/components/collections/EditAlbumDetailsDialog";
-import { GalleryBarAndListHeader } from "@/components/collections/GalleryBarAndListHeader";
 import { GalleryEmptyState } from "@/components/gallery";
 import { AlbumsOverview } from "@/components/gallery/AlbumsOverview";
 import { useGallerySlideshow } from "@/components/gallery/hooks/use-gallery-slideshow";
@@ -275,8 +275,8 @@ export const AlbumsSection = ({
             fullBleed={isMapView}
             navigation={
                 <AlbumsNavigation
-                    {...presentation}
                     mode={barMode}
+                    {...presentation}
                     albumExpansion={albumExpansion}
                     albumFilter={albumFilter}
                     albumSearchQuery={albumSearchQuery}
@@ -294,13 +294,11 @@ export const AlbumsSection = ({
             }
         >
             {!isMapView && (
-                <GalleryBarAndListHeader
+                <AlbumContentHeader
                     albums={sidebarCollectionSummaries}
                     user={user!}
                     activeCollection={activeCollection}
-                    activePerson={undefined}
                     collectionSummary={collectionSummary}
-                    people={[]}
                     setBlockingLoad={setBlockingLoad}
                     setFileListHeader={setFileListHeader}
                     hasActiveFileSelection={hasActiveFileSelection}
@@ -313,8 +311,6 @@ export const AlbumsSection = ({
                         albumOpenedFromOverview.collectionID ===
                             collectionSummary?.id
                     }
-                    mode={barMode}
-                    shouldHide={false}
                     onEditAlbumDetails={showEditAlbumDetails}
                     onCollectionSlideshow={startSlideshow}
                     emailByUserID={library.emailByUserID}

@@ -115,7 +115,7 @@ export interface FileListProps {
         selected: SelectedState | ((selected: SelectedState) => SelectedState),
     ) => void;
     selected: SelectedState;
-    activeCollectionID: number;
+    activeCollectionID: number | undefined;
     activePersonID?: string | undefined;
     favoriteFileIDs?: Set<number>;
     emailByUserID?: Map<number, string>;
@@ -992,7 +992,7 @@ type FileThumbnailProps = {
     isRangeSelectActive: boolean;
     selectOnClick: boolean;
     isInSelectRange: boolean;
-    activeCollectionID: number;
+    activeCollectionID: number | undefined;
     showPlaceholder: boolean;
     isFav: boolean;
     onClick: () => void;
