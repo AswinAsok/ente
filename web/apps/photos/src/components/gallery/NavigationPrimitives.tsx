@@ -184,6 +184,7 @@ export const NavigationFrame = ({
             {...mobileDrawerProps}
             anchor="left"
             slotProps={{
+                transition: { appear: true },
                 backdrop: { sx: { bgcolor: "rgba(0,0,0,0.4)" } },
                 paper: {
                     role: "dialog",

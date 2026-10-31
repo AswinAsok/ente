@@ -98,7 +98,6 @@ export const AlbumsSection = ({
         view?.type == "archive-albums"
             ? view.activeCollectionSummary
             : undefined;
-    const collectionSummary = activeCollectionSummary;
     const [fileListHeader, setFileListHeader] =
         useState<FileListHeaderOrFooter>();
     const {
@@ -113,6 +112,10 @@ export const AlbumsSection = ({
             : barMode == "archive-albums"
               ? library.archivedCollectionSummaries
               : library.normalCollectionSummaries;
+    const collectionSummary =
+        activeCollectionID === undefined
+            ? undefined
+            : barCollectionSummaries.get(activeCollectionID);
     const {
         sidebarCollectionSummaries,
         overviewAlbums,
