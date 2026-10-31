@@ -5,8 +5,8 @@ import type { Collection } from "ente-media/collection";
 import type { EnteFile } from "ente-media/file";
 import type { Dispatch, SetStateAction } from "react";
 import type { GallerySectionPresentation } from "./GallerySectionLayout";
-import type { PlaceSelection } from "./PlacesList";
 import type { useGalleryPreferences } from "./hooks/use-gallery-preferences";
+import type { GalleryNavigationState } from "./navigation-state";
 import type { GalleryState } from "./reducer";
 
 export type GalleryMediaSource = Pick<
@@ -33,11 +33,11 @@ export type GallerySectionOperations = Pick<
     | "onMarkTempDeleted"
     | "onSetOpenFileViewer"
     | "onRemotePull"
-    | "onRemoteFilesPull"
     | "onVisualFeedback"
     | "onAddFileToCollection"
     | "onPendingNavigationConsumed"
 > & {
+    onRemoteFilesPull: () => Promise<void>;
     mediaSource: GalleryMediaSource | undefined;
     setMediaSource: Dispatch<SetStateAction<GalleryMediaSource | undefined>>;
     onToggleFavorite: (file: EnteFile) => Promise<void>;
@@ -57,13 +57,7 @@ export interface GallerySectionProps {
         searchIndexRevision: number;
     };
     operations: GallerySectionOperations;
-    navigation: {
-        view: GalleryState["view"];
-        isInSearchMode: boolean;
-        isMapView: boolean;
-        searchSuggestion: GalleryState["searchSuggestion"];
-        selectedPlace: PlaceSelection | undefined;
-        placeSelectionRevision: number;
+    navigation: GalleryNavigationState & {
         pendingFileNavigation:
             | {
                   fileIndex: number;
@@ -71,6 +65,10 @@ export interface GallerySectionProps {
                   commentID?: string;
               }
             | undefined;
+        retainPerson: (
+            personID: string | undefined,
+            extraVisiblePersonID: string | undefined,
+        ) => void;
     };
     preferences: ReturnType<typeof useGalleryPreferences>;
     presentation: GallerySectionPresentation;

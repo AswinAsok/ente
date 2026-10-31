@@ -5,7 +5,7 @@ import { Typography } from "@mui/material";
 import { useOperationSource } from "./hooks/use-operation-source";
 import type { GalleryMediaSource } from "./section-types";
 
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { Trans } from "react-i18next";
 
 import type { GallerySectionProps } from "./section-types";
@@ -20,6 +20,23 @@ export const GalleryMedia = ({
     header?: FileListHeaderOrFooter;
 }) => {
     useOperationSource(source, operations.setMediaSource);
+    const viewerOpen = useRef(false);
+    const notifyViewer = operations.onSetOpenFileViewer;
+    const onSetOpenFileViewer = useCallback(
+        (open: boolean) => {
+            viewerOpen.current = open;
+            notifyViewer?.(open);
+        },
+        [notifyViewer],
+    );
+    useEffect(
+        () => () => {
+            notifyViewer?.(false);
+            if (viewerOpen.current && document.fullscreenElement)
+                void document.exitFullscreen();
+        },
+        [notifyViewer],
+    );
     const fileCollectionIDs = useMemo(
         () =>
             library.collectionFiles.reduce((result, file) => {
@@ -37,7 +54,8 @@ export const GalleryMedia = ({
     );
 
     const showAppDownloadFooter =
-        library.collectionFiles.length < 30 && !navigation.isInSearchMode;
+        library.collectionFiles.length < 30 &&
+        navigation.overlay?.section !== "search";
     const footer = useMemo(
         () => (showAppDownloadFooter ? createAppDownloadFooter() : undefined),
         [showAppDownloadFooter],
@@ -46,6 +64,7 @@ export const GalleryMedia = ({
         <FileListWithViewer
             {...operations}
             {...source}
+            onSetOpenFileViewer={onSetOpenFileViewer}
             user={library.user}
             header={header}
             footer={footer}
