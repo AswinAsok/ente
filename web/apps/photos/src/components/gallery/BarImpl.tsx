@@ -1,17 +1,14 @@
 import { CollectionsSortOptions } from "@/components/CollectionsSortOptions";
-import { PeopleSortOptions } from "@/components/PeopleSortOptions";
 import {
     matchesAlbumFilter,
     type AlbumFilter,
     type albumFilters,
 } from "@/utils/album-filters";
-import type { PeopleSortBy } from "@/utils/people-sort";
-import { ArrowDown01Icon, PinIcon } from "@hugeicons/core-free-icons";
+import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import AddIcon from "@mui/icons-material/Add";
 import {
     Box,
-    ButtonBase,
     Divider,
     IconButton,
     Stack,
@@ -20,13 +17,11 @@ import {
     useTheme,
 } from "@mui/material";
 import type { EnteFile } from "ente-media/file";
-import { ItemCard } from "ente-new/photos/components/Tiles";
 import {
     PseudoCollectionID,
     type CollectionSummary,
     type CollectionsSortBy,
 } from "ente-new/photos/services/collection-summary";
-import type { Person } from "ente-new/photos/services/ml/people";
 import { wait } from "ente-utils/promise";
 import { t } from "i18next";
 import React, {
@@ -46,10 +41,8 @@ import {
 } from "react-window";
 import {
     BarCard,
-    BarThumbnail,
     CardText,
     CollectionBarCard,
-    CollectionBarCardIcon_,
     NavigationEmptyState,
     NavigationFrame,
     type GalleryBarPresentationProps,
@@ -73,10 +66,6 @@ export interface GalleryBarImplProps extends GalleryBarPresentationProps {
     onCreateAlbum: () => void;
     collectionsSortBy: CollectionsSortBy;
     onChangeCollectionsSortBy: (by: CollectionsSortBy) => void;
-    peopleSortBy: PeopleSortBy;
-    onChangePeopleSortBy: (by: PeopleSortBy) => void;
-    people: Person[];
-    activePerson: Person | undefined;
 }
 
 export const GalleryBarImpl: React.FC<GalleryBarImplProps> = ({
@@ -94,19 +83,13 @@ export const GalleryBarImpl: React.FC<GalleryBarImplProps> = ({
     onCreateAlbum,
     collectionsSortBy,
     onChangeCollectionsSortBy,
-    peopleSortBy,
-    onChangePeopleSortBy,
-    people,
-    activePerson,
     collapsed,
     mobileDrawerProps,
 }) => {
     const {
         selectCollection,
-        selectPerson,
         selectPlace,
         showAlbumOverview: onShowAlbumOverview,
-        showPeople: onShowPeopleOverview,
         showCollectionSummary: onShowCollectionSummary,
     } = usePhotosNavigation();
     const { onClose: closeMobileNavigation } = mobileDrawerProps;
@@ -116,13 +99,6 @@ export const GalleryBarImpl: React.FC<GalleryBarImplProps> = ({
             closeMobileNavigation();
         },
         [selectCollection, closeMobileNavigation],
-    );
-    const onSelectPerson = useCallback(
-        (id: string) => {
-            selectPerson(id);
-            closeMobileNavigation();
-        },
-        [selectPerson, closeMobileNavigation],
     );
     const onSelectPlace = useCallback(
         (place: PlaceSelection | undefined) => {
@@ -135,31 +111,13 @@ export const GalleryBarImpl: React.FC<GalleryBarImplProps> = ({
     const listRef = useRef<FixedSizeList | null>(null);
     const albumListRef = useRef<VariableSizeList | null>(null);
     const [placesSearchQuery, setPlacesSearchQuery] = useState("");
-    const [peopleSearchQuery, setPeopleSearchQuery] = useState("");
     const [groupExpanded, setGroupExpanded] = useState(true);
-    const searchQuery = placesFiles
-        ? placesSearchQuery
-        : mode == "people"
-          ? peopleSearchQuery
-          : albumSearchQuery;
+    const searchQuery = placesFiles ? placesSearchQuery : albumSearchQuery;
     const setSearchQuery = placesFiles
         ? setPlacesSearchQuery
-        : mode == "people"
-          ? setPeopleSearchQuery
-          : onAlbumSearchQueryChange;
+        : onAlbumSearchQueryChange;
     const normalizedSearchQuery = searchQuery.trim().toLowerCase();
     const isSearching = !!normalizedSearchQuery;
-    const matchingPeople = useMemo(
-        () =>
-            mode == "people" && isSearching
-                ? people.filter((person) =>
-                      person.name
-                          ?.toLowerCase()
-                          .includes(normalizedSearchQuery),
-                  )
-                : people,
-        [mode, people, isSearching, normalizedSearchQuery],
-    );
     const [viewportHeight, setViewportHeight] = useState(0);
     const [expandedAlbumFilter, setExpandedAlbumFilter] = useState<
         AlbumFilter | undefined
@@ -190,18 +148,8 @@ export const GalleryBarImpl: React.FC<GalleryBarImplProps> = ({
         setExpandedAlbumFilter(albumFilter);
     }, [albumFilter]);
     useEffect(() => {
-        setPeopleSearchQuery("");
         setGroupExpanded(true);
     }, [mode]);
-
-    useEffect(() => {
-        if (
-            mode == "people" &&
-            (mobile ? !mobileDrawerProps.open : collapsed)
-        ) {
-            setPeopleSearchQuery("");
-        }
-    }, [mode, mobile, mobileDrawerProps.open, collapsed]);
 
     const isPlacesView = !!placesFiles;
     useEffect(() => {
@@ -216,43 +164,27 @@ export const GalleryBarImpl: React.FC<GalleryBarImplProps> = ({
     }, [searchQuery, isSearching]);
 
     const itemData = useMemo<ItemData>(
-        () =>
-            mode == "albums" ||
-            mode == "hidden-albums" ||
-            mode == "archive-albums"
-                ? {
-                      type: "collections",
-                      collectionSummaries: displayedCollectionSummaries,
-                      indented: mode == "albums" || mode == "hidden-albums",
-                      activeCollectionID: activeCollectionID!,
-                      onSelectCollectionID,
-                  }
-                : {
-                      type: "people" as const,
-                      people: matchingPeople,
-                      activePerson,
-                      onSelectPerson,
-                  },
+        () => ({
+            collectionSummaries: displayedCollectionSummaries,
+            indented: mode == "albums" || mode == "hidden-albums",
+            activeCollectionID,
+            onSelectCollectionID,
+        }),
         [
             mode,
             displayedCollectionSummaries,
             activeCollectionID,
             onSelectCollectionID,
-            matchingPeople,
-            activePerson,
-            onSelectPerson,
         ],
     );
 
     const title = placesFiles
         ? t("search_places")
-        : mode == "people"
-          ? t("people")
-          : mode == "hidden-albums"
-            ? t("hidden_albums")
-            : mode == "archive-albums"
-              ? t("section_archive")
-              : t("albums");
+        : mode == "hidden-albums"
+          ? t("hidden_albums")
+          : mode == "archive-albums"
+            ? t("section_archive")
+            : t("albums");
 
     const albumShortcuts = [
         {
@@ -289,7 +221,7 @@ export const GalleryBarImpl: React.FC<GalleryBarImplProps> = ({
                         height={height}
                         itemData={itemData}
                         itemKey={getItemKey}
-                        itemCount={getItemCount(itemData)}
+                        itemCount={itemData.collectionSummaries.length}
                         itemSize={mobile ? 46 : 50}
                         style={{ overflowX: "hidden" }}
                     >
@@ -438,11 +370,6 @@ export const GalleryBarImpl: React.FC<GalleryBarImplProps> = ({
                     ({ id }) => id == activeCollectionID,
                 );
                 break;
-            case "people":
-                i = matchingPeople.findIndex(
-                    ({ id }) => id == activePerson?.id,
-                );
-                break;
         }
         if (i != -1) listRef.current.scrollToItem(i, "smart");
     }, [
@@ -450,8 +377,6 @@ export const GalleryBarImpl: React.FC<GalleryBarImplProps> = ({
         activeAlbumRowIndex,
         displayedCollectionSummaries,
         activeCollectionID,
-        matchingPeople,
-        activePerson,
         collapsed,
         mobile,
         mobileDrawerProps.open,
@@ -462,52 +387,20 @@ export const GalleryBarImpl: React.FC<GalleryBarImplProps> = ({
     const isGroupOverview =
         activeCollectionID == PseudoCollectionID.hiddenItems;
 
-    // Keep the other sections' navigation state across visits to Links.
+    // Preserve album expansion while another section supplies navigation.
     return (
         navigationOverride ?? (
             <NavigationFrame
-                title={
-                    mode == "people" && !placesFiles ? (
-                        <ButtonBase
-                            onClick={() => {
-                                setPeopleSearchQuery("");
-                                onShowPeopleOverview();
-                                mobileDrawerProps.onClose();
-                            }}
-                            sx={{
-                                font: "inherit",
-                                justifyContent: "flex-start",
-                                borderRadius: 1,
-                                "&:hover": { color: "text.muted" },
-                                "&.Mui-focusVisible": {
-                                    outline: "2px solid",
-                                    outlineColor: "primary.main",
-                                    outlineOffset: 2,
-                                },
-                            }}
-                        >
-                            {title}
-                        </ButtonBase>
-                    ) : (
-                        title
-                    )
-                }
+                title={title}
                 actions={
                     <>
-                        {!placesFiles &&
-                            (mode != "people" ? (
-                                <CollectionsSortOptions
-                                    variant="v2"
-                                    activeSortBy={collectionsSortBy}
-                                    onChangeSortBy={onChangeCollectionsSortBy}
-                                />
-                            ) : (
-                                <PeopleSortOptions
-                                    variant="v2"
-                                    activeSortBy={peopleSortBy}
-                                    onChangeSortBy={onChangePeopleSortBy}
-                                />
-                            ))}
+                        {!placesFiles && (
+                            <CollectionsSortOptions
+                                variant="v2"
+                                activeSortBy={collectionsSortBy}
+                                onChangeSortBy={onChangeCollectionsSortBy}
+                            />
+                        )}
                         {!placesFiles &&
                             (mode == "albums" || mode == "hidden-albums") && (
                                 <Tooltip title={t("new_album")}>
@@ -526,11 +419,7 @@ export const GalleryBarImpl: React.FC<GalleryBarImplProps> = ({
                     </>
                 }
                 searchPlaceholder={t(
-                    placesFiles
-                        ? "search_in_places"
-                        : mode == "people"
-                          ? "people_search_hint"
-                          : "search_in_albums",
+                    placesFiles ? "search_in_places" : "search_in_albums",
                 )}
                 searchQuery={searchQuery}
                 setSearchQuery={setSearchQuery}
@@ -546,7 +435,7 @@ export const GalleryBarImpl: React.FC<GalleryBarImplProps> = ({
                 ) : isSearching &&
                   (mode == "albums"
                       ? !visibleAlbumFilters.length && !albumShortcuts.length
-                      : !getItemCount(itemData)) ? (
+                      : !itemData.collectionSummaries.length) ? (
                     <NavigationEmptyState />
                 ) : mode == "albums" ? (
                     <Box
@@ -633,123 +522,35 @@ const AlbumNavigationItem = memo(
     areEqual,
 );
 
-type ItemData =
-    | {
-          type: "collections";
-          collectionSummaries: CollectionSummary[];
-          indented: boolean;
-          activeCollectionID: number;
-          onSelectCollectionID: (id: number) => void;
-      }
-    | {
-          type: "people";
-          people: Person[];
-          activePerson: Person | undefined;
-          onSelectPerson: (personID: string) => void;
-      };
-
-const getItemCount = (data: ItemData) => {
-    switch (data.type) {
-        case "collections": {
-            return data.collectionSummaries.length;
-        }
-        case "people": {
-            return data.people.length;
-        }
-    }
-};
+interface ItemData {
+    collectionSummaries: CollectionSummary[];
+    indented: boolean;
+    activeCollectionID: number | undefined;
+    onSelectCollectionID: (id: number) => void;
+}
 
 const getItemKey = (index: number, data: ItemData) => {
-    switch (data.type) {
-        case "collections": {
-            const collectionSummary = data.collectionSummaries[index]!;
-            return `${data.type}-${collectionSummary.id}-${collectionSummary.coverFile?.id}`;
-        }
-        case "people": {
-            const person = data.people[index]!;
-            return `${data.type}-${person.id}-${person.displayFaceID}`;
-        }
-    }
+    const collectionSummary = data.collectionSummaries[index]!;
+    return `collections-${collectionSummary.id}-${collectionSummary.coverFile?.id}`;
 };
 
-const ListItem = memo((props: ListChildComponentProps<ItemData>) => {
-    const { data, index, style } = props;
-
-    let card: React.ReactNode;
-
-    switch (data.type) {
-        case "collections": {
-            const {
-                collectionSummaries,
-                activeCollectionID,
-                onSelectCollectionID,
-            } = data;
-            const collectionSummary = collectionSummaries[index]!;
-            card = (
+const ListItem = memo(
+    ({ data, index, style }: ListChildComponentProps<ItemData>) => {
+        const collectionSummary = data.collectionSummaries[index]!;
+        return (
+            <div style={style}>
                 <CollectionBarCard
                     key={collectionSummary.id}
-                    {...{
-                        collectionSummary,
-                        activeCollectionID,
-                        onSelectCollectionID,
-                    }}
+                    collectionSummary={collectionSummary}
+                    activeCollectionID={data.activeCollectionID}
+                    onSelectCollectionID={data.onSelectCollectionID}
                     indented={
                         data.indented &&
                         !collectionSummary.attributes.has("system")
                     }
                 />
-            );
-            break;
-        }
-
-        case "people": {
-            const { people, activePerson, onSelectPerson } = data;
-            const person = people[index]!;
-            card = (
-                <PersonCard
-                    key={person.id}
-                    {...{ person, activePerson, onSelectPerson }}
-                />
-            );
-            break;
-        }
-    }
-
-    return <div style={style}>{card}</div>;
-}, areEqual);
-
-interface PersonCardProps {
-    person: Person;
-    activePerson: Person | undefined;
-    onSelectPerson: (personID: string) => void;
-}
-
-const PersonCard: React.FC<PersonCardProps> = ({
-    person,
-    activePerson,
-    onSelectPerson,
-}) => (
-    <BarCard
-        aria-label={person.name || t("unnamed_person")}
-        aria-current={activePerson?.id === person.id ? "true" : undefined}
-        title={person.name || t("unnamed_person")}
-        onClick={() => onSelectPerson(person.id)}
-    >
-        <Box
-            aria-hidden
-            sx={{ flexShrink: 0, borderRadius: "50%", overflow: "hidden" }}
-        >
-            <ItemCard
-                TileComponent={BarThumbnail}
-                coverFile={person.displayFaceFile}
-                coverFaceID={person.displayFaceID}
-            />
-        </Box>
-        <CardText>{person.name || t("unnamed_person")}</CardText>
-        {person.isPinned && (
-            <CollectionBarCardIcon_ aria-hidden>
-                <HugeiconsIcon icon={PinIcon} size={14} />
-            </CollectionBarCardIcon_>
-        )}
-    </BarCard>
+            </div>
+        );
+    },
+    areEqual,
 );

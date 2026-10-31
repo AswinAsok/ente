@@ -115,15 +115,11 @@ const renderSearch = (
         uncategorizedCollectionSummaryID: 99,
         activeCollectionID: undefined,
         collectionsSortBy: "updation-time-desc",
-        peopleSortBy: "name-asc",
-        people: [],
-        activePerson: undefined,
         collapsed: false,
         mobileDrawerProps: { open: false, onClose: vi.fn() },
         onAlbumSearchQueryChange: vi.fn(),
         onCreateAlbum: vi.fn(),
         onChangeCollectionsSortBy: vi.fn(),
-        onChangePeopleSortBy: vi.fn(),
     };
     const navigation: PhotosNavigationActions = {
         goHome: vi.fn(),

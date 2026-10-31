@@ -34,7 +34,7 @@ import { AlbumsOverview } from "@/components/gallery/AlbumsOverview";
 import { DuplicatesView } from "@/components/gallery/DuplicatesView";
 import { LargeFilesView } from "@/components/gallery/LargeFilesView";
 import { LinksView } from "@/components/gallery/LinksView";
-import { PeopleOverview } from "@/components/gallery/PeopleOverview";
+import { PeopleView } from "@/components/gallery/PeopleView";
 import {
     PhotosNavigationContext,
     type PhotosNavigationActions,
@@ -72,7 +72,6 @@ import {
     type AlbumFilter,
 } from "@/utils/album-filters";
 import { externalLink } from "@/utils/link";
-import { sortPeople, type PeopleSortBy } from "@/utils/people-sort";
 import { CheckmarkCircle02Icon } from "@hugeicons/core-free-icons";
 import { Typography } from "@mui/material";
 import { sessionExpiredDialogAttributes } from "ente-accounts/components/utils/dialog";
@@ -220,8 +219,6 @@ const Page: React.FC = () => {
         searchQuery: string;
     }>();
     const [blockingLoad, setBlockingLoad] = useState(false);
-    const [peopleSortBy, setPeopleSortBy] =
-        useState<PeopleSortBy>("count-desc");
     const [shouldDisableDropzone, setShouldDisableDropzone] = useState(false);
     const [dragAndDropFiles, setDragAndDropFiles] = useState<FileWithPath[]>(
         [],
@@ -393,10 +390,6 @@ const Page: React.FC = () => {
     const people =
         (state.view?.type == "people" ? state.view.visiblePeople : undefined) ??
         [];
-    const sortedPeople = useMemo(
-        () => sortPeople(people, peopleSortBy),
-        [people, peopleSortBy],
-    );
     const activePersonID = activePerson?.id;
     const fileCollectionIDs = useMemo(
         () =>
@@ -2179,7 +2172,6 @@ const Page: React.FC = () => {
                                   activeCollectionID:
                                       galleryBarActiveCollectionID,
                                   onRemotePull: remotePull,
-                                  activePerson,
                                   albumFilter,
                                   albumSearchQuery,
                                   onAlbumSearchQueryChange: setAlbumSearchQuery,
@@ -2190,14 +2182,15 @@ const Page: React.FC = () => {
                                       state.uncategorizedCollectionSummaryID,
                                   collectionsSortBy,
                                   onChangeCollectionsSortBy,
-                                  peopleSortBy,
-                                  onChangePeopleSortBy: setPeopleSortBy,
-                                  people: sortedPeople,
                               }
                     }
                     sectionNavigation={
-                        !isCleanupViewOpen && barMode == "links"
-                            ? { activeCollectionID: selectedLinkID }
+                        !isCleanupViewOpen &&
+                        (barMode == "links" || barMode == "people")
+                            ? {
+                                  activeCollectionID:
+                                      galleryBarActiveCollectionID,
+                              }
                             : undefined
                     }
                     alternateHeader={
@@ -2275,6 +2268,20 @@ const Page: React.FC = () => {
                             />
                         </>
                     )}
+                    {/* Preserve the People sort choice across section changes. */}
+                    <PeopleView
+                        view={
+                            state.view?.type == "people"
+                                ? state.view
+                                : undefined
+                        }
+                        showOverview={
+                            !isMapView &&
+                            !isCleanupViewOpen &&
+                            !isInSearchMode &&
+                            !isFirstLoad
+                        }
+                    />
                     {barMode == "links" && (
                         <LinksView
                             user={user}
@@ -2337,13 +2344,7 @@ const Page: React.FC = () => {
                     ) : !isInSearchMode &&
                       !isFirstLoad &&
                       state.view?.type == "people" &&
-                      !state.view.activePerson ? (
-                        <PeopleOverview
-                            people={state.view.visiblePeople}
-                            allPeople={state.view.people}
-                            peopleSortBy={peopleSortBy}
-                        />
-                    ) : (
+                      !state.view.activePerson ? null : (
                         <FileListWithViewer
                             mode={barMode}
                             modePlus={isInSearchMode ? "search" : barMode}
