@@ -56,9 +56,6 @@ export const useCollectionOperations = ({
         CollectionOp | undefined
     >(undefined);
     const postCreateAlbumHidden = useRef(false);
-    const postCreateOperation = useRef<
-        ((collection: Collection) => void) | undefined
-    >(undefined);
     const { show: showAlbumNameInput, props: albumNameInputVisibilityProps } =
         useModalVisibility();
     const [albumAddedNotification, setAlbumAddedNotification] = useState<{
@@ -178,12 +175,11 @@ export const useCollectionOperations = ({
     const createOnCreateForCollectionOp = useCallback(
         (op: CollectionOp) => {
             setPostCreateAlbumOp(op);
-            postCreateOperation.current = createOnSelectForCollectionOp(op);
             postCreateAlbumHidden.current =
                 (op == "add" || op == "move") && barMode == "hidden-albums";
             return showAlbumNameInput;
         },
-        [showAlbumNameInput, barMode, createOnSelectForCollectionOp],
+        [showAlbumNameInput, barMode],
     );
     const handleAlbumNameSubmit = useCallback(
         async (name: string) => {
@@ -223,15 +219,19 @@ export const useCollectionOperations = ({
                     return;
                 }
 
-                postCreateOperation.current?.(collection);
+                createOnSelectForCollectionOp(postCreateAlbumOp)(collection);
                 setPostCreateAlbumOp(undefined);
                 postCreateAlbumHidden.current = false;
             } finally {
                 pendingSingleFileAdd.current = undefined;
-                postCreateOperation.current = undefined;
             }
         },
-        [postCreateAlbumOp, remotePull, showNotification],
+        [
+            createOnSelectForCollectionOp,
+            postCreateAlbumOp,
+            remotePull,
+            showNotification,
+        ],
     );
     const handleOpenCollectionSelector = useCallback(
         (attributes: CollectionSelectorAttributes) => {
@@ -329,7 +329,6 @@ export const useCollectionOperations = ({
                 onClose={() => {
                     // Do not leak a cancelled add into the next album creation.
                     pendingSingleFileAdd.current = undefined;
-                    postCreateOperation.current = undefined;
                     postCreateAlbumHidden.current = false;
                     setPostCreateAlbumOp(undefined);
                     albumNameInputVisibilityProps.onClose();
