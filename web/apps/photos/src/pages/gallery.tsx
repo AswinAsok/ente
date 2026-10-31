@@ -28,7 +28,6 @@ import {
     GalleryEmptyState,
     PeopleConsentDialog,
     SearchResultsHeader,
-    type RemotePullOpts,
 } from "@/components/gallery";
 import { AlbumsOverview } from "@/components/gallery/AlbumsOverview";
 import { DuplicatesView } from "@/components/gallery/DuplicatesView";
@@ -52,21 +51,16 @@ import {
     showCollectionSummaryWithAuthentication,
 } from "@/components/gallery/helpers";
 import { useGalleryAuthentication } from "@/components/gallery/hooks/use-gallery-authentication";
+import { useGalleryLibrary } from "@/components/gallery/hooks/use-gallery-library";
 import { useGalleryPreferences } from "@/components/gallery/hooks/use-gallery-preferences";
 import { useGallerySlideshow } from "@/components/gallery/hooks/use-gallery-slideshow";
-import { useSubscriptionCompletionRedirect } from "@/components/gallery/hooks/use-subscription-completion-redirect";
-import {
-    useGalleryReducer,
-    type GalleryBarMode,
-} from "@/components/gallery/reducer";
+import type { GalleryBarMode } from "@/components/gallery/reducer";
 import { useAlbumNavigationData } from "@/components/gallery/use-album-navigation-data";
 import {
     notifyOthersFilesDialogAttributes,
     notifyUnsupportedSharedFavoritesDialogAttributes,
     trashFilesDialogAttributes,
 } from "@/components/utils/dialog-attributes";
-import exportService from "@/services/export";
-import { processPendingAlbumJoin } from "@/services/join-album";
 import {
     albumFilters,
     visibleAlbumFilters,
@@ -76,32 +70,15 @@ import { externalLink } from "@/utils/link";
 import { sortPeople } from "@/utils/people-sort";
 import { CheckmarkCircle02Icon } from "@hugeicons/core-free-icons";
 import { Typography } from "@mui/material";
-import { sessionExpiredDialogAttributes } from "ente-accounts/components/utils/dialog";
-import {
-    getAndClearIsFirstLogin,
-    savedJustSignedUp,
-} from "ente-accounts/services/accounts-db";
-import { stashRedirect } from "ente-accounts/services/redirect";
-import { isSessionInvalid } from "ente-accounts/services/session";
-import { ensureLocalUser } from "ente-accounts/services/user";
 import { Notification } from "ente-base/components/Notification";
 import { SingleInputDialog } from "ente-base/components/SingleInputDialog";
 import { TranslucentLoadingOverlay } from "ente-base/components/loaders";
 import { errorDialogAttributes } from "ente-base/components/utils/dialog";
 import { useModalVisibility } from "ente-base/components/utils/modal";
 import { useBaseContext } from "ente-base/context";
-import { subscribeMainWindowFocus } from "ente-base/electron";
-import { isNamedError } from "ente-base/error";
 import { isHTTPErrorWithStatus } from "ente-base/http";
-import { hasPendingAlbumToJoin } from "ente-base/join-album";
 import log from "ente-base/log";
-import {
-    clearSessionStorage,
-    haveMasterKeyInSession,
-} from "ente-base/session-storage";
-import { savedAuthToken } from "ente-base/token";
 import type { Location } from "ente-base/types";
-import { initContacts, pullContacts } from "ente-contacts";
 import { DownloadStatusNotifications } from "ente-gallery/components/DownloadStatusNotifications";
 import { FullScreenDropZone } from "ente-gallery/components/FullScreenDropZone";
 import type { UploadTypeSelectorIntent } from "ente-gallery/components/Upload";
@@ -118,11 +95,8 @@ import { AssignPersonDialog } from "ente-new/photos/components/AssignPersonDialo
 import { EditLocationDialog } from "ente-new/photos/components/EditLocationDialog";
 import {
     useMLStatusSnapshot,
-    usePeopleStateSnapshot,
     useSettingsSnapshot,
-    useUserDetailsSnapshot,
 } from "ente-new/photos/components/utils/use-snapshot";
-import { masterKeyFromSession } from "ente-new/photos/services/account-keys";
 import {
     addToCollection,
     addToFavoritesCollection,
@@ -148,12 +122,8 @@ import {
     addManualFileAssignmentsToPerson,
     isMLEnabled,
 } from "ente-new/photos/services/ml";
-import { contactsGetDiff, contactsGetProfilePicture } from "ente-photos-wasm";
 
-import { ensureAuthenticatedSession } from "@/services/authenticated-session";
-import { postPullFiles, prePullFiles, pullFiles } from "@/services/pull";
 import { uploadManager } from "@/services/upload-manager";
-import watcher from "@/services/watch";
 import {
     selectedFavoriteCount as countSelectedFavorites,
     getSelectedFiles,
@@ -165,23 +135,10 @@ import {
     quickLinkNameForFiles,
     resolveQuickLinkURL,
 } from "ente-gallery/utils/quick-link";
-import {
-    savedCollectionFiles,
-    savedCollections,
-    savedTrashItems,
-} from "ente-new/photos/services/photos-fdb";
-import {
-    filterSearchableFiles,
-    updateSearchCollectionsAndFiles,
-} from "ente-new/photos/services/search";
+import { filterSearchableFiles } from "ente-new/photos/services/search";
 import type { SearchOption } from "ente-new/photos/services/search/types";
-import {
-    initSettings,
-    updateMapEnabled,
-} from "ente-new/photos/services/settings";
-import { savedUserDetailsOrTriggerPull } from "ente-new/photos/services/user-details";
+import { updateMapEnabled } from "ente-new/photos/services/settings";
 import { usePhotosAppContext } from "ente-new/photos/types/context";
-import { PromiseQueue } from "ente-utils/promise";
 import { t } from "i18next";
 import { useRouter } from "next/router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -189,7 +146,7 @@ import type { FileWithPath } from "react-dropzone";
 import { Trans } from "react-i18next";
 
 const Page: React.FC = () => {
-    const { logout, showMiniDialog, onGenericError } = useBaseContext();
+    const { showMiniDialog, onGenericError } = useBaseContext();
     const {
         showLoadingBar,
         hideLoadingBar,
@@ -197,13 +154,20 @@ const Page: React.FC = () => {
         showNotification,
     } = usePhotosAppContext();
 
-    const [state, dispatch] = useGalleryReducer();
+    const {
+        state,
+        dispatch,
+        isFirstLoad,
+        peopleState,
+        remotePull,
+        remoteFilesPull,
+        showSessionExpiredDialog,
+    } = useGalleryLibrary();
 
     const [cleanupView, setCleanupView] = useState<
         "large-files" | "duplicates"
     >();
     const isCleanupViewOpen = cleanupView !== undefined;
-    const [isFirstLoad, setIsFirstLoad] = useState(false);
     const [isContextMenuOpen, setIsContextMenuOpen] = useState(false);
     const [suppressContextSelectionBar, setSuppressContextSelectionBar] =
         useState(false);
@@ -228,10 +192,6 @@ const Page: React.FC = () => {
     const pendingSingleFileAdd = useRef<
         { file: EnteFile; sourceCollectionSummaryID?: number } | undefined
     >(undefined);
-    // Pull pipelines mutate the same local DB and reducer state.
-    const remoteFilesPullQueue = useRef(new PromiseQueue<void>());
-    const remotePullQueue = useRef(new PromiseQueue<void>());
-
     const [uploadTypeSelectorView, setUploadTypeSelectorView] = useState(false);
     const [uploadTypeSelectorIntent, setUploadTypeSelectorIntent] =
         useState<UploadTypeSelectorIntent>("upload");
@@ -248,8 +208,6 @@ const Page: React.FC = () => {
         useState<CollectionSelectorAttributes | undefined>();
 
     const { customDomain, mapEnabled } = useSettingsSnapshot();
-    const userDetails = useUserDetailsSnapshot();
-    const peopleState = usePeopleStateSnapshot();
     const mlStatus = useMLStatusSnapshot();
 
     const {
@@ -523,120 +481,6 @@ const Page: React.FC = () => {
     const router = useRouter();
 
     useEffect(() => {
-        const electron = globalThis.electron;
-        let syncIntervalID: ReturnType<typeof setInterval> | undefined;
-        let unsubscribeMainWindowFocus: (() => void) | undefined;
-
-        void (async () => {
-            const authToken = await savedAuthToken();
-            if (!haveMasterKeyInSession() || !authToken) {
-                stashRedirect("/gallery");
-                void router.push("/");
-                return;
-            }
-
-            if (savedJustSignedUp()) {
-                void router.replace("/plan");
-                return;
-            }
-
-            try {
-                await ensureAuthenticatedSession();
-            } catch (e) {
-                if (isNamedError(e, "missing_recovery_key")) {
-                    showMiniDialog(sessionExpiredDialogAttributes(logout));
-                } else {
-                    onGenericError(e);
-                }
-                return;
-            }
-
-            initSettings();
-            setupSelectAllKeyBoardShortcutHandler();
-
-            dispatch({ type: "showAll" });
-
-            setIsFirstLoad(getAndClearIsFirstLogin());
-
-            const user = ensureLocalUser();
-            void initContacts(
-                user.id,
-                ensureAuthenticatedSession,
-                contactsGetDiff,
-                contactsGetProfilePicture,
-            )
-                .then(pullContacts)
-                .catch((error: unknown) => {
-                    log.warn(
-                        "[gallery] Failed to warm contacts display cache",
-                        error,
-                    );
-                });
-            const userDetails = await savedUserDetailsOrTriggerPull();
-            dispatch({
-                type: "mount",
-                user,
-                familyData: userDetails?.familyData,
-                collections: await savedCollections(),
-                collectionFiles: await savedCollectionFiles(),
-                trashItems: await savedTrashItems(),
-            });
-
-            // Join first so the initial pull includes the new album.
-            let joinedAlbumId: number | null = null;
-
-            if (hasPendingAlbumToJoin()) {
-                try {
-                    const joinedCollectionId = await processPendingAlbumJoin();
-                    if (joinedCollectionId) {
-                        joinedAlbumId = joinedCollectionId;
-                    }
-                } catch (error) {
-                    log.error("Failed to join album", error);
-                    showMiniDialog({
-                        title: t("error"),
-                        message: t("album_join_failed"),
-                    });
-                }
-            }
-
-            await remotePull({ source: "gallery-mount" });
-
-            if (joinedAlbumId) {
-                dispatch({
-                    type: "showCollectionSummary",
-                    collectionSummaryID: joinedAlbumId,
-                });
-            }
-
-            setIsFirstLoad(false);
-
-            syncIntervalID = setInterval(
-                () => remotePull({ silent: true, source: "gallery-periodic" }),
-                5 * 60 * 1000,
-            );
-
-            if (electron) {
-                unsubscribeMainWindowFocus = subscribeMainWindowFocus(() => {
-                    void remotePull({ silent: true, source: "desktop-focus" });
-                    void watcher.checkAccessibility();
-                });
-            }
-        })();
-
-        return () => {
-            clearInterval(syncIntervalID);
-            unsubscribeMainWindowFocus?.();
-        };
-    }, []);
-
-    useEffect(() => {
-        if (state.user && userDetails) {
-            dispatch({ type: "setUserDetails", userDetails });
-        }
-    }, [state.user, userDetails]);
-
-    useEffect(() => {
         if (
             (!isAlbumOverview && typeof activeCollectionID == "undefined") ||
             !router.isReady
@@ -655,26 +499,6 @@ const Page: React.FC = () => {
     useEffect(() => {
         if (!activeCollectionSummary) closeCollectionMap();
     }, [activeCollectionSummary, closeCollectionMap]);
-
-    useSubscriptionCompletionRedirect();
-
-    useEffect(() => {
-        updateSearchCollectionsAndFiles(
-            state.collections,
-            state.collectionFiles,
-            state.hiddenCollectionIDs,
-            state.hiddenFileIDs,
-        );
-    }, [
-        state.collections,
-        state.collectionFiles,
-        state.hiddenCollectionIDs,
-        state.hiddenFileIDs,
-    ]);
-
-    useEffect(() => {
-        dispatch({ type: "setPeopleState", peopleState });
-    }, [peopleState]);
 
     useEffect(() => {
         if (isInSearchMode && state.searchSuggestion) {
@@ -816,11 +640,6 @@ const Page: React.FC = () => {
         };
     }, [selectAll, clearSelection, isCleanupViewOpen]);
 
-    const showSessionExpiredDialog = useCallback(
-        () => showMiniDialog(sessionExpiredDialogAttributes(logout)),
-        [showMiniDialog, logout],
-    );
-
     const handleVisualFeedback = useCallback(() => {
         showLoadingBar();
         setTimeout(hideLoadingBar, 0);
@@ -829,75 +648,6 @@ const Page: React.FC = () => {
     const handlePendingNavigationConsumed = useCallback(() => {
         setPendingFileNavigation(undefined);
     }, []);
-
-    // Use this for collection/file/trash-only effects; a full pull costs more.
-    const remoteFilesPull = useCallback(
-        () =>
-            remoteFilesPullQueue.current.add(() =>
-                pullFiles({
-                    onSetCollections: (collections) =>
-                        dispatch({ type: "setCollections", collections }),
-                    onSetCollectionFiles: (collectionFiles) =>
-                        dispatch({
-                            type: "setCollectionFiles",
-                            collectionFiles,
-                        }),
-                    onSetTrashedItems: (trashItems) =>
-                        dispatch({ type: "setTrashItems", trashItems }),
-                    onDidUpdateCollectionFiles: () =>
-                        exportService.onLocalFilesUpdated(),
-                }),
-            ),
-        [],
-    );
-
-    const remotePull = useCallback(
-        async (opts?: RemotePullOpts) =>
-            remotePullQueue.current.add(async () => {
-                const { silent, source, strict } = opts ?? {};
-
-                if (!navigator.onLine) {
-                    if (strict) throw new Error("Remote pull failed: offline");
-                    return;
-                }
-                if (await isSessionInvalid()) {
-                    showSessionExpiredDialog();
-                    if (strict)
-                        throw new Error("Remote pull failed: invalid session");
-                    return;
-                }
-                if (!(await masterKeyFromSession())) {
-                    clearSessionStorage();
-                    void router.push("/credentials");
-                    if (strict)
-                        throw new Error(
-                            "Remote pull failed: missing master key",
-                        );
-                    return;
-                }
-
-                try {
-                    if (!silent) showLoadingBar();
-                    await prePullFiles();
-                    await remoteFilesPull();
-                    await postPullFiles(source);
-                } catch (e) {
-                    // A later pull retries transient failures after remote mutations.
-                    log.error("Remote pull failed", e);
-                    if (strict) throw e;
-                } finally {
-                    dispatch({ type: "clearUnsyncedState" });
-                    if (!silent) hideLoadingBar();
-                }
-            }),
-        [
-            showLoadingBar,
-            hideLoadingBar,
-            router,
-            showSessionExpiredDialog,
-            remoteFilesPull,
-        ],
-    );
 
     const setupSelectAllKeyBoardShortcutHandler = () => {
         const handleKeyUp = (e: KeyboardEvent) => {
@@ -918,6 +668,10 @@ const Page: React.FC = () => {
             document.removeEventListener("keydown", handleKeyUp);
         };
     };
+
+    useEffect(() => {
+        return user ? setupSelectAllKeyBoardShortcutHandler() : undefined;
+    }, [!!user]);
 
     const handleRemoveFilesFromCollection = (collection: Collection) => {
         void (async () => {
