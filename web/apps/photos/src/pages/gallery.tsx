@@ -569,8 +569,6 @@ const Page: React.FC = () => {
         openCollectionSelector,
         showAlbumNameInput,
         albumNameInputVisibilityProps,
-        setPostCreateAlbumOp,
-        postCreateAlbumHidden,
         handleRemoveFilesFromCollection,
         createOnSelectForCollectionOp,
         createOnCreateForCollectionOp,
@@ -1256,11 +1254,7 @@ const Page: React.FC = () => {
                                         filter={overviewFilter!}
                                         searchQuery={albumSearchQuery}
                                         sortBy={collectionsSortBy}
-                                        onCreateAlbum={() => {
-                                            setPostCreateAlbumOp(undefined);
-                                            postCreateAlbumHidden.current = false;
-                                            showAlbumNameInput();
-                                        }}
+                                        onCreateAlbum={showAlbumNameInput}
                                     />
                                 ) : !isInSearchMode &&
                                   !isFirstLoad &&

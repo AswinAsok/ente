@@ -12,7 +12,6 @@ import { notifyOthersFilesDialogAttributes } from "@/components/utils/dialog-att
 import { getSelectedFiles, type SelectedState } from "@/utils/file";
 import { Notification } from "ente-base/components/Notification";
 import { SingleInputDialog } from "ente-base/components/SingleInputDialog";
-import { useModalVisibility } from "ente-base/components/utils/modal";
 import { useBaseContext } from "ente-base/context";
 import type { Collection } from "ente-media/collection";
 import type { EnteFile } from "ente-media/file";
@@ -24,7 +23,7 @@ import {
 } from "ente-new/photos/services/collection";
 import { usePhotosAppContext } from "ente-new/photos/types/context";
 import { t } from "i18next";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import type { RemotePullOpts } from "..";
 import type { GalleryState } from "../reducer";
 export const useCollectionOperations = ({
@@ -46,21 +45,25 @@ export const useCollectionOperations = ({
     const { showMiniDialog, onGenericError } = useBaseContext();
     const { showLoadingBar, hideLoadingBar, showNotification } =
         usePhotosAppContext();
-    const pendingSingleFileAdd = useRef<
-        { file: EnteFile; sourceCollectionSummaryID?: number } | undefined
-    >(undefined);
     const [openCollectionSelector, setOpenCollectionSelector] = useState(false);
     const [collectionSelectorAttributes, setCollectionSelectorAttributes] =
         useState<CollectionSelectorAttributes | undefined>();
-    const [postCreateAlbumOp, setPostCreateAlbumOp] = useState<
-        CollectionOp | undefined
-    >(undefined);
-    const postCreateAlbumHidden = useRef(false);
-    const postCreateOperation = useRef<
-        ((collection: Collection) => void) | undefined
-    >(undefined);
-    const { show: showAlbumNameInput, props: albumNameInputVisibilityProps } =
-        useModalVisibility();
+    const [albumCreation, setAlbumCreation] = useState<{
+        isHidden: boolean;
+        onCreate?: (collection: Collection) => void | Promise<void>;
+    }>();
+    const showAlbumNameInput = useCallback(
+        () => setAlbumCreation({ isHidden: false }),
+        [],
+    );
+    const albumNameInputVisibilityProps = {
+        open: !!albumCreation,
+        // A completed submission must not close a newer dialog.
+        onClose: () =>
+            setAlbumCreation((current) =>
+                current === albumCreation ? undefined : current,
+            ),
+    };
     const [albumAddedNotification, setAlbumAddedNotification] = useState<{
         open: boolean;
         albumName?: string;
@@ -176,62 +179,31 @@ export const useCollectionOperations = ({
         ],
     );
     const createOnCreateForCollectionOp = useCallback(
-        (op: CollectionOp) => {
-            setPostCreateAlbumOp(op);
-            postCreateOperation.current = createOnSelectForCollectionOp(op);
-            postCreateAlbumHidden.current =
-                (op == "add" || op == "move") && barMode == "hidden-albums";
-            return showAlbumNameInput;
-        },
-        [showAlbumNameInput, barMode, createOnSelectForCollectionOp],
+        (op: CollectionOp) => () =>
+            setAlbumCreation({
+                isHidden:
+                    (op == "add" || op == "move") && barMode == "hidden-albums",
+                onCreate: createOnSelectForCollectionOp(op),
+            }),
+        [barMode, createOnSelectForCollectionOp],
     );
     const handleAlbumNameSubmit = useCallback(
         async (name: string) => {
-            try {
-                const collection = postCreateAlbumHidden.current
-                    ? await createHiddenAlbum(name)
-                    : await createAlbum(name);
+            const collection = albumCreation?.isHidden
+                ? await createHiddenAlbum(name)
+                : await createAlbum(name);
 
-                if (pendingSingleFileAdd.current) {
-                    await performCollectionOp(
-                        "add",
-                        collection,
-                        [pendingSingleFileAdd.current.file],
-                        pendingSingleFileAdd.current.sourceCollectionSummaryID,
-                    );
-
-                    await remotePull({
-                        silent: true,
-                        source: "single-file-add-new-album",
-                    });
-                    setAlbumAddedNotification({
-                        open: true,
-                        albumName: collection.name,
-                    });
-                    setOpenCollectionSelector(false);
-                    setPostCreateAlbumOp(undefined);
-                    postCreateAlbumHidden.current = false;
-                    return;
-                }
-
-                if (postCreateAlbumOp === undefined) {
-                    await remotePull();
-                    showNotification({
-                        color: "primary",
-                        title: t("album_created"),
-                    });
-                    return;
-                }
-
-                postCreateOperation.current?.(collection);
-                setPostCreateAlbumOp(undefined);
-                postCreateAlbumHidden.current = false;
-            } finally {
-                pendingSingleFileAdd.current = undefined;
-                postCreateOperation.current = undefined;
+            if (albumCreation?.onCreate) {
+                await albumCreation.onCreate(collection);
+            } else {
+                await remotePull();
+                showNotification({
+                    color: "primary",
+                    title: t("album_created"),
+                });
             }
         },
-        [postCreateAlbumOp, remotePull, showNotification],
+        [albumCreation, remotePull, showNotification],
     );
     const handleOpenCollectionSelector = useCallback(
         (attributes: CollectionSelectorAttributes) => {
@@ -250,8 +222,6 @@ export const useCollectionOperations = ({
     );
     const handleAddSingleFileToCollection = useCallback(
         (file: EnteFile, sourceCollectionSummaryID?: number) => {
-            pendingSingleFileAdd.current = { file, sourceCollectionSummaryID };
-
             const handleSelect = async (collection: Collection) => {
                 try {
                     setAlbumAddedNotification({ open: false });
@@ -273,15 +243,31 @@ export const useCollectionOperations = ({
                 } catch (e) {
                     onGenericError(e);
                 } finally {
-                    pendingSingleFileAdd.current = undefined;
                     hideLoadingBar();
                 }
             };
 
             const handleCreate = () => {
-                setPostCreateAlbumOp("add");
-                postCreateAlbumHidden.current = false;
-                showAlbumNameInput();
+                setAlbumCreation({
+                    isHidden: false,
+                    onCreate: async (collection) => {
+                        await performCollectionOp(
+                            "add",
+                            collection,
+                            [file],
+                            sourceCollectionSummaryID,
+                        );
+                        await remotePull({
+                            silent: true,
+                            source: "single-file-add-new-album",
+                        });
+                        setAlbumAddedNotification({
+                            open: true,
+                            albumName: collection.name,
+                        });
+                        setOpenCollectionSelector(false);
+                    },
+                });
             };
 
             handleOpenCollectionSelector({
@@ -290,9 +276,6 @@ export const useCollectionOperations = ({
                 onSelectCollection: (collection) =>
                     void handleSelect(collection),
                 onCreateCollection: handleCreate,
-                onCancel: () => {
-                    pendingSingleFileAdd.current = undefined;
-                },
             });
         },
         [
@@ -300,7 +283,6 @@ export const useCollectionOperations = ({
             remotePull,
             onGenericError,
             hideLoadingBar,
-            showAlbumNameInput,
             showLoadingBar,
         ],
     );
@@ -326,14 +308,6 @@ export const useCollectionOperations = ({
                 title={t("new_album")}
                 label={t("album_name")}
                 submitButtonTitle={t("create")}
-                onClose={() => {
-                    // Do not leak a cancelled add into the next album creation.
-                    pendingSingleFileAdd.current = undefined;
-                    postCreateOperation.current = undefined;
-                    postCreateAlbumHidden.current = false;
-                    setPostCreateAlbumOp(undefined);
-                    albumNameInputVisibilityProps.onClose();
-                }}
                 onSubmit={handleAlbumNameSubmit}
             />{" "}
             <Notification
@@ -355,8 +329,6 @@ export const useCollectionOperations = ({
         openCollectionSelector,
         showAlbumNameInput,
         albumNameInputVisibilityProps,
-        setPostCreateAlbumOp,
-        postCreateAlbumHidden,
         handleRemoveFilesFromCollection,
         createOnSelectForCollectionOp,
         createOnCreateForCollectionOp,
