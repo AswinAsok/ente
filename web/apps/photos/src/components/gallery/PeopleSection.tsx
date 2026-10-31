@@ -21,6 +21,22 @@ export const PeopleSection = ({
         [view?.visiblePeople, preferences.peopleSortBy],
     );
     const activePerson = view?.activePerson;
+    const visiblePeople = view?.visiblePeople;
+    const header = useMemo(
+        () => ({
+            component:
+                activePerson && visiblePeople ? (
+                    <PeopleHeader
+                        person={activePerson}
+                        people={visiblePeople}
+                    />
+                ) : (
+                    <></>
+                ),
+            height: 72,
+        }),
+        [activePerson, visiblePeople],
+    );
     return (
         <GallerySectionLayout
             presentation={presentation}
@@ -43,17 +59,7 @@ export const PeopleSection = ({
             ) : (
                 <GalleryMedia
                     {...{ library, operations, navigation }}
-                    header={{
-                        component: activePerson ? (
-                            <PeopleHeader
-                                person={activePerson}
-                                people={view.visiblePeople}
-                            />
-                        ) : (
-                            <></>
-                        ),
-                        height: 72,
-                    }}
+                    header={header}
                     source={{
                         mode: "people",
                         modePlus: "people",

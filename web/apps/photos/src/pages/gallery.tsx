@@ -564,16 +564,20 @@ const Page: React.FC = () => {
         [closeCollectionMap],
     );
 
+    const handlePeopleUnavailable = useCallback(
+        () => handleShowCollectionSummaryWithID(PseudoCollectionID.all),
+        [handleShowCollectionSummaryWithID],
+    );
+    const handleNavigateToPeople = useCallback(() => {
+        setIsMapView(false);
+        setCleanupView(undefined);
+        dispatch({ type: "showPeople" });
+    }, [dispatch]);
     const { showPeople: handleShowPeople, dialog: peopleConsentDialog } =
         usePeopleEntry({
             isCurrentDestination: barMode == "people",
-            onUnavailable: () =>
-                handleShowCollectionSummaryWithID(PseudoCollectionID.all),
-            onNavigate: () => {
-                setIsMapView(false);
-                setCleanupView(undefined);
-                dispatch({ type: "showPeople" });
-            },
+            onUnavailable: handlePeopleUnavailable,
+            onNavigate: handleNavigateToPeople,
         });
     const handleBackToPeople = useCallback(() => {
         setCleanupView(undefined);
