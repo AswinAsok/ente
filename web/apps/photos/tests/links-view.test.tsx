@@ -2,7 +2,7 @@ import type { LocalUser } from "ente-accounts/services/user";
 import { CollectionSubType, type Collection } from "ente-media/collection";
 import type { EnteFile } from "ente-media/file";
 import { ItemVisibility } from "ente-media/file-metadata";
-import type { ComponentProps } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, test, vi } from "vitest";
 import { AlbumsOverview } from "../src/components/gallery/AlbumsOverview";
@@ -21,6 +21,23 @@ vi.mock("../src/components/gallery/PublicLinkDetails", () => ({
     PublicLinkDetails: vi.fn(() => null),
 }));
 
+vi.mock("../src/components/gallery/LinksNavigation", () => ({
+    LinksNavigation: vi.fn(() => null),
+}));
+vi.mock("../src/components/gallery/GallerySectionLayout", () => ({
+    GallerySectionLayout: ({
+        navigation,
+        children,
+    }: {
+        navigation: ReactNode;
+        children: ReactNode;
+    }) => (
+        <>
+            {navigation}
+            {children}
+        </>
+    ),
+}));
 beforeEach(() => vi.clearAllMocks());
 
 const link = (id: number, overrides: Partial<Collection> = {}): Collection => ({
@@ -81,6 +98,16 @@ const props = (
         trashItems: [],
     });
     return {
+        presentation: {
+            collapsed: false,
+            mobile: false,
+            mobileDrawerProps: { open: false, onClose: vi.fn() },
+            reduceMotion: true,
+            isFirstLoad: false,
+            isOffline: false,
+        },
+        onSearchQueryChange: vi.fn(),
+        onChangeSortBy: vi.fn(),
         user,
         collections,
         collectionFiles: state.collectionFiles,
