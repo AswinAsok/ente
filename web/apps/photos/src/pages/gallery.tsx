@@ -1,12 +1,15 @@
 import { AlbumsSection } from "@/components/gallery/AlbumsSection";
 import { GalleryDownloadNotifications } from "@/components/gallery/GalleryDownloadNotifications";
 import { GalleryMedia } from "@/components/gallery/GalleryMedia";
+import { GallerySectionLayout } from "@/components/gallery/GallerySectionLayout";
 import { PeopleSection } from "@/components/gallery/PeopleSection";
+import { PlacesSection } from "@/components/gallery/PlacesSection";
 import { useCollectionOperations } from "@/components/gallery/hooks/use-collection-operations";
 import { useFileContextActions } from "@/components/gallery/hooks/use-file-context-actions";
 import { useFileMutations } from "@/components/gallery/hooks/use-file-mutations";
 import { useGallerySelection } from "@/components/gallery/hooks/use-gallery-selection";
 import { useGalleryUploads } from "@/components/gallery/hooks/use-gallery-uploads";
+import { useMapEntry } from "@/components/gallery/hooks/use-map-entry";
 import { usePeopleEntry } from "@/components/gallery/hooks/use-people-entry";
 import { useSelectedFileOperations } from "@/components/gallery/hooks/use-selected-file-operations";
 import type { GallerySectionOperations } from "@/components/gallery/section-types";
@@ -18,11 +21,9 @@ import { DesktopWhatsNew } from "@/components/DesktopWhatsNew";
 import type { FileListHeaderOrFooter } from "@/components/FileList";
 import { QuickLinkCreatedNotification } from "@/components/QuickLinkCreatedNotification";
 import { SelectedFileOptions } from "@/components/SelectedFileOptions";
-import { CollectionMap } from "@/components/collections/CollectionMap";
 import { SearchResultsHeader } from "@/components/gallery";
 import { DuplicatesView } from "@/components/gallery/DuplicatesView";
 import { LargeFilesView } from "@/components/gallery/LargeFilesView";
-import { LegacyGallerySection } from "@/components/gallery/LegacyGallerySection";
 import { LinksView } from "@/components/gallery/LinksView";
 import {
     PhotosNavigationContext,
@@ -43,12 +44,10 @@ import { useGalleryPreferences } from "@/components/gallery/hooks/use-gallery-pr
 import type { GalleryBarMode } from "@/components/gallery/reducer";
 import type { AlbumFilter } from "@/utils/album-filters";
 import { TranslucentLoadingOverlay } from "ente-base/components/loaders";
-import { useBaseContext } from "ente-base/context";
 import { FullScreenDropZone } from "ente-gallery/components/FullScreenDropZone";
 import { useSaveGroups } from "ente-gallery/components/utils/save-groups";
 import type { FileViewerInitialSidebar } from "ente-gallery/components/viewer/FileViewer";
 import { ItemVisibility } from "ente-media/file-metadata";
-import { useSettingsSnapshot } from "ente-new/photos/components/utils/use-snapshot";
 import {
     haveOnlySystemCollections,
     PseudoCollectionID,
@@ -57,13 +56,11 @@ import {
 import { getSelectedFiles, type SelectedState } from "@/utils/file";
 import { filterSearchableFiles } from "ente-new/photos/services/search";
 import type { SearchOption } from "ente-new/photos/services/search/types";
-import { updateMapEnabled } from "ente-new/photos/services/settings";
 import { usePhotosAppContext } from "ente-new/photos/types/context";
 import { useRouter } from "next/router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const Page: React.FC = () => {
-    const { onGenericError } = useBaseContext();
     const { showLoadingBar, hideLoadingBar } = usePhotosAppContext();
 
     const {
@@ -97,7 +94,6 @@ const Page: React.FC = () => {
         FileListHeaderOrFooter | undefined
     >(undefined);
 
-    const { mapEnabled } = useSettingsSnapshot();
     const { saveGroups, onAddSaveGroup, onRemoveSaveGroup } = useSaveGroups();
     const navigationRef = useRef<PhotosNavigationShellHandle>(null);
 
@@ -110,25 +106,11 @@ const Page: React.FC = () => {
     const [isMapView, setIsMapView] = useState(false);
     const closeCollectionMap = useCallback(() => setIsMapView(false), []);
 
-    const handleShowCollectionMap = useCallback(() => {
-        void (async () => {
-            if (!mapEnabled) {
-                try {
-                    await updateMapEnabled(true);
-                } catch (e) {
-                    onGenericError(e);
-                    return;
-                }
-            }
-            setIsMapView(true);
-        })();
-    }, [mapEnabled, onGenericError]);
-
+    const openMap = useCallback(() => setIsMapView(true), []);
+    const handleShowCollectionMap = useMapEntry(openMap);
     const {
         user,
-        favoriteFileIDs,
         collectionNameByID,
-        fileNormalCollectionIDs,
         hiddenCollectionIDs,
         normalCollectionSummaries,
         hiddenFileIDs,
@@ -190,40 +172,18 @@ const Page: React.FC = () => {
         navigationAvailable: !isCleanupViewOpen && !isInSearchMode,
     });
     const {
-        albumFilter,
         setAlbumFilter,
         albumSearchQuery,
         setAlbumSearchQuery,
         albumOpenedFromOverview,
         setAlbumOpenedFromOverview,
-        peopleSortBy,
-        setPeopleSortBy,
         collectionsSortBy,
         onChangeCollectionsSortBy,
-        albumExpansion,
     } = preferences;
 
     const activePerson =
         state.view?.type == "people" ? state.view.activePerson : undefined;
     const activePersonID = activePerson?.id;
-    const mapFileSource = useMemo(
-        () => ({
-            collectionFiles: state.collectionFiles,
-            favoriteFileIDs,
-            hiddenFileIDs,
-            archivedFileIDs: state.archivedFileIDs,
-            tempDeletedFileIDs,
-            tempHiddenFileIDs,
-        }),
-        [
-            favoriteFileIDs,
-            hiddenFileIDs,
-            state.archivedFileIDs,
-            state.collectionFiles,
-            tempDeletedFileIDs,
-            tempHiddenFileIDs,
-        ],
-    );
     const selectedFilesInView = useMemo(
         () => getSelectedFiles(selected, filteredFiles),
         [selected, filteredFiles],
@@ -853,29 +813,6 @@ const Page: React.FC = () => {
         return <div></div>;
     }
 
-    const collectionMap = activeCollectionSummary && (
-        <CollectionMap
-            collectionSummary={activeCollectionSummary}
-            files={filteredFiles}
-            selectedPlace={
-                activeCollectionID === PseudoCollectionID.all
-                    ? selectedPlace
-                    : undefined
-            }
-            placeSelectionRevision={placeSelectionRevision}
-            mapFileSource={mapFileSource}
-            onRemotePull={remotePull}
-            onAddSaveGroup={onAddSaveGroup}
-            onMarkTempDeleted={handleMarkTempDeleted}
-            onAddFileToCollection={handleAddSingleFileToCollection}
-            onRemoteFilesPull={remoteFilesPull}
-            onVisualFeedback={handleVisualFeedback}
-            fileNormalCollectionIDs={fileNormalCollectionIDs}
-            collectionNameByID={collectionNameByID}
-            emailByUserID={state.emailByUserID}
-        />
-    );
-
     return (
         <PhotosNavigationContext.Provider value={navigationActions}>
             <FullScreenDropZone
@@ -1001,47 +938,17 @@ const Page: React.FC = () => {
                                 preferences={preferences}
                                 presentation={presentation}
                             />
-                        ) : (
-                            <LegacyGallerySection
-                                mode={barMode}
+                        ) : isMapView ? (
+                            <PlacesSection
+                                library={sectionLibrary}
+                                operations={sectionOperations}
+                                navigation={sectionNavigation}
+                                preferences={preferences}
                                 presentation={presentation}
-                                fullBleed={isMapView}
-                                navigation={
-                                    isCleanupViewOpen || isInSearchMode
-                                        ? undefined
-                                        : {
-                                              selectedPlace,
-                                              placesFiles:
-                                                  isMapView &&
-                                                  activeCollectionID ===
-                                                      PseudoCollectionID.all
-                                                      ? filteredFiles
-                                                      : undefined,
-                                              activeCollectionID:
-                                                  galleryBarActiveCollectionID,
-                                              onRemotePull: remotePull,
-                                              activePerson,
-                                              albumFilter,
-                                              albumExpansion,
-                                              albumSearchQuery,
-                                              onAlbumSearchQueryChange:
-                                                  setAlbumSearchQuery,
-                                              collectionSummaries: [],
-                                              visibleAlbumFilters: [],
-                                              uncategorizedCollectionSummaryID:
-                                                  state.uncategorizedCollectionSummaryID,
-                                              collectionsSortBy,
-                                              onChangeCollectionsSortBy,
-                                              peopleSortBy,
-                                              onChangePeopleSortBy:
-                                                  setPeopleSortBy,
-                                              people: [],
-                                          }
-                                }
-                            >
-                                {isMapView ? (
-                                    collectionMap
-                                ) : cleanupView === "duplicates" ? (
+                            />
+                        ) : (
+                            <GallerySectionLayout presentation={presentation}>
+                                {cleanupView === "duplicates" ? (
                                     <DuplicatesView
                                         onRemoteFilesPull={remoteFilesPull}
                                     />
@@ -1075,7 +982,7 @@ const Page: React.FC = () => {
                                         }}
                                     />
                                 )}
-                            </LegacyGallerySection>
+                            </GallerySectionLayout>
                         )
                     }
                 </PhotosNavigationShell>
