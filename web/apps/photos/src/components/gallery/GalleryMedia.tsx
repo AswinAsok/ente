@@ -4,6 +4,7 @@ import { SelectedFileOptions } from "@/components/SelectedFileOptions";
 import { externalLink } from "@/utils/link";
 import { Box, Typography } from "@mui/material";
 import { ItemVisibility } from "ente-media/file-metadata";
+import { t } from "i18next";
 import { useCollectionOperations } from "./hooks/use-collection-operations";
 import { useFileContextActions } from "./hooks/use-file-context-actions";
 import { useGallerySelection } from "./hooks/use-gallery-selection";
@@ -40,6 +41,7 @@ export const GalleryMedia = (props: GalleryMediaProps) => {
         source.activePersonID,
         navigation.overlay?.suggestion?.type,
         navigation.overlay?.suggestion?.label,
+        navigation.overlay?.searchRevision,
     ]);
     return <GalleryMediaContent key={scope} {...props} />;
 };
@@ -142,7 +144,9 @@ const GalleryMediaContent = ({
             {showSelectionBar && (
                 <Box
                     role="toolbar"
-                    aria-label="Selected file actions"
+                    aria-label={t("selected_count", {
+                        selected: selected.count,
+                    })}
                     sx={{
                         flexShrink: 0,
                         display: "flex",

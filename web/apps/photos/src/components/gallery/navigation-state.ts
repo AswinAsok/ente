@@ -20,6 +20,7 @@ export interface GalleryNavigationState {
     overlay?: {
         section: "search" | "duplicates" | "large-files";
         suggestion?: SearchSuggestion;
+        searchRevision?: number;
     };
     selectedPlace?: PlaceSelection;
     placeSelectionRevision: number;
@@ -153,6 +154,7 @@ export const navigationReducer = (
                 overlay: {
                     section: "search",
                     suggestion: action.searchSuggestion,
+                    searchRevision: (state.overlay?.searchRevision ?? 0) + 1,
                 },
             };
         case "exitSearch":
