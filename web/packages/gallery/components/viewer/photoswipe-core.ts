@@ -883,6 +883,55 @@ export class FileViewerPhotoSwipe<
             const ui = pswp.ui!;
 
             ui.uiElementsData.find((e) => e.name == "zoom")!.order = 6;
+            ui.registerElement({
+                name: "zoom-percentage",
+                appendTo: "root",
+                order: 6,
+                isButton: false,
+                onInit: (element) => {
+                    element.title = t("zoom");
+                    let previousSlide = pswp.currSlide;
+                    let previousZoomLevel: number | undefined;
+                    let hideTimer: ReturnType<typeof setTimeout> | undefined;
+                    const hideZoomPercentage = () => {
+                        if (hideTimer !== undefined) clearTimeout(hideTimer);
+                        hideTimer = undefined;
+                        showIf(element, false);
+                    };
+                    const updateZoomPercentage = () => {
+                        const slide = pswp.currSlide;
+                        // Panning alone should not reveal the indicator or
+                        // extend its visibility.
+                        if (
+                            slide == previousSlide &&
+                            slide?.currZoomLevel == previousZoomLevel
+                        )
+                            return;
+                        previousSlide = slide;
+                        previousZoomLevel = slide?.currZoomLevel;
+                        hideZoomPercentage();
+                        // PhotoSwipe uses the image's natural dimensions, so
+                        // a zoom level of 1 corresponds to its original size.
+                        const text =
+                            slide?.isZoomable() &&
+                            slide.currZoomLevel >
+                                slide.zoomLevels.initial + 0.001
+                                ? `${Math.round(slide.currZoomLevel * 100)}%`
+                                : "";
+                        showIf(element, !!text);
+                        if (element.textContent != text)
+                            element.textContent = text;
+                        if (text)
+                            hideTimer = setTimeout(hideZoomPercentage, 5000);
+                    };
+                    pswp.on("zoomPanUpdate", updateZoomPercentage);
+                    pswp.on("change", updateZoomPercentage);
+                    pswp.on("close", hideZoomPercentage);
+                    pswp.on("destroy", hideZoomPercentage);
+                    hideZoomPercentage();
+                    updateZoomPercentage();
+                },
+            });
             const preloader = ui.uiElementsData.find(
                 (e) => e.name == "preloader",
             )!;
