@@ -328,6 +328,11 @@ export const AlbumsSection = ({
                 <GalleryMedia
                     {...{ library, operations, navigation }}
                     header={fileListHeader}
+                    enableDateScrubber={
+                        barMode === "albums" &&
+                        activeCollectionID === PseudoCollectionID.all &&
+                        !isInSearchMode
+                    }
                     source={{
                         mode: barMode,
                         modePlus: barMode,
