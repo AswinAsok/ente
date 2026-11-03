@@ -1,4 +1,4 @@
-use ente_accounts::{AccountsClient as InnerClient, Error, auth, lifecycle, login, signup};
+use ente_accounts::{AccountsClient as InnerClient, Error, auth, lifecycle, signup};
 pub use ente_accounts::{
     auth::KeyAttributes,
     models::{
@@ -221,7 +221,7 @@ impl AccountsClient {
                 attributes.ops_limit,
             )?,
         };
-        let account = login::unlock(&response, &kek)?;
+        let account = self.0.unlock(&response, &kek)?;
         Ok(UnlockedAccount {
             master_key: b64::encode(&account.secrets.master_key),
             secret_key: b64::encode(&account.secrets.secret_key),
@@ -235,7 +235,7 @@ impl AccountsClient {
         response: AuthResponse,
         recovery_key: String,
     ) -> Result<RecoveredAccount, AccountsError> {
-        let account = login::recover_account(&response, &recovery_key)?;
+        let account = self.0.recover_account(&response, &recovery_key)?;
         Ok(RecoveredAccount {
             master_key: b64::encode(&account.secrets.master_key),
             secret_key: b64::encode(&account.secrets.secret_key),
@@ -246,24 +246,22 @@ impl AccountsClient {
     pub async fn change_password(
         &self,
         token: String,
-        email: String,
         password: String,
         master_key: Vec<u8>,
         key_attributes: KeyAttributes,
         log_out_other_devices: bool,
     ) -> Result<KeyAttributes, AccountsError> {
-        let result = lifecycle::change_password(
+        lifecycle::change_password(
             &self.0.with_auth_token(token),
             lifecycle::ChangePasswordParams {
-                email,
                 password: password.into(),
                 master_key: SecretVec::new(master_key),
                 key_attributes,
                 log_out_other_devices,
             },
         )
-        .await?;
-        Ok(result.key_attributes)
+        .await
+        .map_err(Into::into)
     }
 
     pub async fn setup_two_factor(&self, token: String) -> Result<TwoFactorSecret, AccountsError> {

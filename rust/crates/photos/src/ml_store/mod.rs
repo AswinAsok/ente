@@ -1,3 +1,4 @@
+mod clip_scan;
 mod cluster_averages;
 mod clustering;
 mod face_distances;
@@ -14,6 +15,7 @@ use ente_vecdb::{VecDb, VecDbError};
 
 use crate::ml_db::MlDb;
 
+pub use clip_scan::{ClipQuery, ClipSimilarity};
 pub use cluster_averages::MeanSuggestion;
 pub use clustering::{
     ClusteredBucket, FaceClusteringPlan, FaceClusteringRequest, FaceClusteringRun,
@@ -32,6 +34,8 @@ pub enum Error {
     Index(#[from] VecDbError),
     #[error("{0}")]
     InvalidArgument(String),
+    #[error("{0:?} index is not filled")]
+    NotFilled(Index),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

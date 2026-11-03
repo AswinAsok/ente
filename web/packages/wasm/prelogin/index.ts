@@ -92,15 +92,17 @@ export const completeSignup = async (
     (await wasm()).completeSignup(client, email, token, attributes, setup);
 
 export const unlockAccount = async (
+    client: AccountsClient,
     response: unknown,
     kek: string,
-): Promise<unknown> => (await wasm()).unlockAccount(response, kek);
+): Promise<unknown> => (await wasm()).unlockAccount(client, response, kek);
 
 export const unlockAccountWithMasterKey = async (
+    client: AccountsClient,
     response: unknown,
     masterKey: string,
 ): Promise<unknown> =>
-    (await wasm()).unlockAccountWithMasterKey(response, masterKey);
+    (await wasm()).unlockAccountWithMasterKey(client, response, masterKey);
 
 export const generateSignupKeys = async (password: string, srpUserID: string) =>
     (await wasm()).authGenerateSignupKeys(password, srpUserID);
@@ -167,14 +169,15 @@ const toB64String = (value: Uint8Array | string): string => {
 };
 
 export const recoverAccount = async (
+    client: AccountsClient,
     response: unknown,
     recoveryKey: string,
-): Promise<unknown> => (await wasm()).recoverAccount(response, recoveryKey);
+): Promise<unknown> =>
+    (await wasm()).recoverAccount(client, response, recoveryKey);
 
 export const changePassword = async (
     client: AccountsClient,
     token: string,
-    email: string,
     password: string,
     masterKey: string,
     keyAttributes: unknown,
@@ -182,7 +185,6 @@ export const changePassword = async (
     (await wasm()).changePassword(
         client,
         token,
-        email,
         password,
         masterKey,
         keyAttributes,

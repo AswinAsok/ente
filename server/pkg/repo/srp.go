@@ -94,9 +94,9 @@ func (repo *UserAuthRepository) InsertTempSRPSetup(ctx context.Context, req ente
 	return &id, stacktrace.Propagate(err, "")
 }
 
-func (repo *UserAuthRepository) GetTempSRPSetupEntity(ctx context.Context, setUpID uuid.UUID) (*ente.SRPSetupEntity, error) {
+func (repo *UserAuthRepository) GetTempSRPSetupEntity(ctx context.Context, setUpID uuid.UUID, userID int64) (*ente.SRPSetupEntity, error) {
 	result := ente.SRPSetupEntity{}
-	row := repo.DB.QueryRowContext(ctx, `SELECT id, session_id, user_id, srp_user_id, salt, verifier FROM temp_srp_setup WHERE id = $1`, setUpID)
+	row := repo.DB.QueryRowContext(ctx, `SELECT id, session_id, user_id, srp_user_id, salt, verifier FROM temp_srp_setup WHERE id = $1 AND user_id = $2`, setUpID, userID)
 	err := row.Scan(&result.ID, &result.SessionID, &result.UserID, &result.SRPUserID, &result.Salt, &result.Verifier)
 	if err != nil {
 		return nil, stacktrace.Propagate(err, "")
@@ -225,13 +225,21 @@ func (repo *UserAuthRepository) TrySetSrpSessionVerified(ctx context.Context, se
 	return rowsAffected == 1, nil
 }
 
-func (repo *UserAuthRepository) CleanupOldFakeSessions(ctx context.Context) (int64, error) {
+func (repo *UserAuthRepository) CleanupOldSRPSessions(ctx context.Context, batchSize int) (int64, error) {
 	result, err := repo.DB.ExecContext(ctx, `
+		WITH old_sessions AS (
+			SELECT id
+			FROM srp_sessions
+			WHERE created_at < (now_utc_micro_seconds() - (24::BIGINT * 60 * 60 * 1000 * 1000))
+			ORDER BY created_at
+			LIMIT $1
+			FOR UPDATE SKIP LOCKED
+		)
 		DELETE FROM srp_sessions
-		WHERE is_fake = true
-		AND created_at < (now_utc_micro_seconds() - (24::BIGINT * 60 * 60 * 1000 * 1000))`)
+		USING old_sessions
+		WHERE srp_sessions.id = old_sessions.id`, batchSize)
 	if err != nil {
-		return 0, stacktrace.Propagate(err, "failed to cleanup old fake sessions")
+		return 0, stacktrace.Propagate(err, "failed to cleanup old SRP sessions")
 	}
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {

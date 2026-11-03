@@ -1,10 +1,13 @@
 pub mod cast_api;
+pub mod dedup_api;
 pub mod image_processing_api;
 pub mod init;
 pub mod location_api;
 #[cfg(any(feature = "flutter", frb_expand))]
 pub mod log;
 pub mod map_cluster_api;
+#[cfg(any(feature = "flutter", frb_expand))]
+pub mod memories_api;
 pub mod metadata_api;
 pub mod ml_db_api;
 pub mod ml_indexing_api;

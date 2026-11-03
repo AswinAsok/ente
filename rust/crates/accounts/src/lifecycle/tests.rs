@@ -87,19 +87,31 @@ async fn setup_two_factor_encrypts_secret_with_recovery_key() {
         result.enable(&client, "invalid").await,
         Err(Error::IncorrectTotp)
     ));
-    result
-        .enable(
-            &client,
-            &ente_test_support::account_fixture::current_totp(&result.secret_code).unwrap(),
-        )
-        .await
-        .unwrap();
+    let code = ente_test_support::account_fixture::current_totp(&result.secret_code).unwrap();
+    result.enable(&client, &code).await.unwrap();
 
     assert_eq!(result.secret_code, secret_code);
     assert_eq!(result.recovery_key, recovery_key);
 
     setup.assert_async().await;
     enable.assert_async().await;
+    enable.remove_async().await;
+
+    let rejected = server
+        .mock("POST", "/users/two-factor/enable")
+        .with_status(401)
+        .expect(2)
+        .create_async()
+        .await;
+    assert!(matches!(
+        result.enable(&client, &code).await,
+        Err(Error::Http(error)) if error.status_code() == Some(401)
+    ));
+    assert!(matches!(
+        enable_two_factor(&client, secret_code, &recovery_key, &code).await,
+        Err(Error::IncorrectTotp)
+    ));
+    rejected.assert_async().await;
 }
 
 #[test]
@@ -166,57 +178,72 @@ async fn two_factor_recovery_preserves_secret_encoding() {
     let recovery_key =
         crypto::Key::try_from_slice(&hex::decode(&recovery_key_hex).unwrap()).unwrap();
     let mut server = Server::new_async().await;
-    let client = make_client(server.url());
-
-    for (factor, secret) in [
-        (TwoFactorType::Totp, TOTP_SECRET),
-        (TwoFactorType::Passkey, PASSKEY_SECRET),
-    ] {
-        let encrypted = secretbox::encrypt(&b64::decode(secret).unwrap(), &recovery_key);
-        let remove = server
-            .mock("POST", "/users/two-factor/remove")
-            .match_body(Matcher::Json(serde_json::json!({
-                "sessionID": "recovery-session",
-                "secret": secret,
-                "twoFactorType": factor,
-            })))
-            .with_status(200)
-            .with_body(
-                serde_json::json!({
-                    "id": 1,
-                    "keyAttributes": keys.key_attributes,
-                    "encryptedToken": "encrypted-token",
-                })
-                .to_string(),
-            )
-            .create_async()
-            .await;
-
-        let envelope = TwoFactorRecoveryResponse {
-            encrypted_secret: b64::encode(&encrypted.encrypted_data),
-            secret_decryption_nonce: b64::encode(encrypted.nonce.as_bytes()),
+    for strict in [false, true] {
+        let origin = if strict {
+            server.url().replace("127.0.0.1", "localhost")
+        } else {
+            server.url()
         };
-        assert!(matches!(
+        let client = make_client(origin);
+
+        for (factor, secret, proof) in [
+            (
+                TwoFactorType::Totp,
+                TOTP_SECRET,
+                "CBPrRdwiN5FRHBSQfTRIaEAN8Psf46H3iA3IugLVPqw=",
+            ),
+            (
+                TwoFactorType::Passkey,
+                PASSKEY_SECRET,
+                "f+nF2g7+BGieMdZ8uJLndOcDP5GX2ffGgLk5DhHqKFI=",
+            ),
+        ] {
+            let encrypted = secretbox::encrypt(&b64::decode(secret).unwrap(), &recovery_key);
+            let remove = server
+                .mock("POST", "/users/two-factor/remove")
+                .match_body(Matcher::Json(serde_json::json!({
+                    "sessionID": "recovery-session",
+                    if strict { "proof" } else { "secret" }: if strict { proof } else { secret },
+                    "twoFactorType": factor,
+                })))
+                .with_status(200)
+                .with_body(
+                    serde_json::json!({
+                        "id": 1,
+                        "keyAttributes": keys.key_attributes,
+                        "encryptedToken": "encrypted-token",
+                    })
+                    .to_string(),
+                )
+                .create_async()
+                .await;
+
+            let envelope = TwoFactorRecoveryResponse {
+                encrypted_secret: b64::encode(&encrypted.encrypted_data),
+                secret_decryption_nonce: b64::encode(encrypted.nonce.as_bytes()),
+            };
+            assert!(matches!(
+                recover_two_factor(
+                    &client,
+                    factor,
+                    "recovery-session",
+                    &envelope,
+                    &hex::encode(crypto::Key::generate().as_bytes()),
+                )
+                .await,
+                Err(Error::IncorrectRecoveryKey)
+            ));
             recover_two_factor(
                 &client,
                 factor,
                 "recovery-session",
                 &envelope,
-                &hex::encode(crypto::Key::generate().as_bytes()),
+                &recovery_key_hex,
             )
-            .await,
-            Err(Error::IncorrectRecoveryKey)
-        ));
-        recover_two_factor(
-            &client,
-            factor,
-            "recovery-session",
-            &envelope,
-            &recovery_key_hex,
-        )
-        .await
-        .unwrap();
-        remove.assert_async().await;
+            .await
+            .unwrap();
+            remove.assert_async().await;
+        }
     }
 }
 
@@ -297,22 +324,13 @@ async fn change_password_updates_srp_and_keys() {
         .create_async()
         .await;
 
-    let state_for_attrs = Arc::clone(&state);
     let get_srp_attributes = server
         .mock("GET", "/users/srp/attributes")
         .match_query(Matcher::UrlEncoded(
             "email".into(),
             "user@example.org".into(),
         ))
-        .with_status(200)
-        .with_body_from_request(move |_| {
-            let state = state_for_attrs.lock().unwrap();
-            serde_json::json!({
-                "attributes": state.remote_srp_attributes
-            })
-            .to_string()
-            .into_bytes()
-        })
+        .expect(0)
         .create_async()
         .await;
 
@@ -322,7 +340,6 @@ async fn change_password_updates_srp_and_keys() {
     let result = change_password_with_strength(
         &client,
         ChangePasswordParams {
-            email: "user@example.org".into(),
             password: Zeroizing::new("new-password".into()),
             master_key: SecretVec::new(master_key),
             key_attributes,
@@ -334,8 +351,14 @@ async fn change_password_updates_srp_and_keys() {
     .unwrap();
 
     assert_eq!(
-        result.srp_attributes.kek_salt,
-        result.key_attributes.kek_salt
+        result.kek_salt,
+        state
+            .lock()
+            .unwrap()
+            .remote_srp_attributes
+            .as_ref()
+            .unwrap()
+            .kek_salt
     );
 
     setup_srp.assert_async().await;
