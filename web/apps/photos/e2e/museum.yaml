@@ -1,0 +1,4 @@
+internal:
+    hardcoded-ott:
+        local-domain-suffix: "@example.org"
+        local-domain-value: "123456"

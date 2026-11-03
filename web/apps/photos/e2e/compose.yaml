@@ -1,0 +1,9 @@
+services:
+    museum:
+        ports: !override
+            - "127.0.0.1:8083:8080"
+        volumes:
+            - ../web/apps/photos/e2e/museum.yaml:/museum.yaml:ro
+
+    minio:
+        ports: !reset []
