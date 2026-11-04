@@ -2965,6 +2965,7 @@ dependencies = [
  "ente-accounts",
  "ente-core",
  "postgresql_embedded",
+ "serde_json",
  "tokio",
  "uuid",
 ]
