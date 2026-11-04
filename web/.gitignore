@@ -10,4 +10,6 @@ dist
 out/
 next-env.d.ts
 
+e2e-results/
+
 packages/wasm/*/pkg/

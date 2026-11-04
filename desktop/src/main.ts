@@ -1,3 +1,5 @@
+import "./main/test-environment";
+
 import { nativeImage, shell } from "electron/common";
 import {
     BrowserWindow,
@@ -28,6 +30,7 @@ import { shouldHideDockIcon } from "./main/services/store";
 import { createWatcher } from "./main/services/watch";
 import { userPreferences } from "./main/stores/user-preferences";
 import { registerStreamProtocol } from "./main/stream";
+import { isE2E } from "./main/test-environment";
 import { wait } from "./main/utils/common";
 import { isDev } from "./main/utils/electron";
 
@@ -52,7 +55,7 @@ const main = () => {
 
     initLogging();
     logStartupBanner();
-    registerForEnteLinks();
+    if (!isE2E) registerForEnteLinks();
 
     // Electron keeps the last privileged-scheme registration. This must follow
     // next-electron-server's registration so both "ente" and "stream" survive.
@@ -103,7 +106,7 @@ const main = () => {
 
             Menu.setApplicationMenu(createApplicationMenu(mainWindow));
             setupTrayItem(mainWindow);
-            setupAutoUpdater(mainWindow);
+            if (!isE2E) setupAutoUpdater(mainWindow);
         })();
     });
 

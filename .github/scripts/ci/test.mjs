@@ -46,6 +46,8 @@ test("shared build inputs select their consumers", (t) => {
         "android-lint",
         "apple-lint",
         "mobile-lint",
+        "photos-desktop-e2e",
+        "photos-web-e2e",
         "repo-lint",
         "rust-cli-test",
         "rust-lint",
@@ -54,6 +56,8 @@ test("shared build inputs select their consumers", (t) => {
     ]);
     assert.ok(select(t, ["server/pkg/api.go"]).includes("rust-test"));
     assert.deepEqual(select(t, ["rust/apps/cli/src/main.rs"]), [
+        "photos-desktop-e2e",
+        "photos-web-e2e",
         "repo-lint",
         "rust-cli-test",
         "rust-lint",
@@ -104,9 +108,16 @@ test("path filters cover root files, nested files, and dotfiles", (t) => {
 
 test("deletions and moves select every affected area", (t) => {
     const before = ["web/shared.txt"];
-    assert.deepEqual(select(t, [], before), ["repo-lint", "web-lint"]);
+    assert.deepEqual(select(t, [], before), [
+        "photos-desktop-e2e",
+        "photos-web-e2e",
+        "repo-lint",
+        "web-lint",
+    ]);
     assert.deepEqual(select(t, ["desktop/shared.txt"], before), [
         "desktop-lint",
+        "photos-desktop-e2e",
+        "photos-web-e2e",
         "repo-lint",
         "web-lint",
     ]);
@@ -239,3 +250,19 @@ function run(args, options = {}) {
         ...options,
     });
 }
+
+test("Photos E2E selects both targets for shared code and desktop for its shell", (t) => {
+    for (const file of [
+        "web/apps/photos/src/pages/index.tsx",
+        "rust/crates/test-support/src/lib.rs",
+        "server/cmd/museum/main.go",
+        ".github/workflows/photos-e2e.yml",
+    ]) {
+        const selected = select(t, [file]);
+        assert.ok(selected.includes("photos-web-e2e"), file);
+        assert.ok(selected.includes("photos-desktop-e2e"), file);
+    }
+    const selected = select(t, ["desktop/src/main.ts"]);
+    assert.ok(selected.includes("photos-desktop-e2e"));
+    assert.ok(!selected.includes("photos-web-e2e"));
+});

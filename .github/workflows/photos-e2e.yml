@@ -1,0 +1,94 @@
+name: Photos E2E
+
+on:
+    workflow_call:
+        inputs:
+            target:
+                required: true
+                type: string
+
+permissions:
+    contents: read
+
+jobs:
+    e2e:
+        runs-on: ubuntu-latest
+        timeout-minutes: 45
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+            - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+              with:
+                  node-version: 24
+                  cache: npm
+                  cache-dependency-path: |
+                      web/package-lock.json
+                      desktop/package-lock.json
+
+            - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+              with:
+                  go-version-file: server/go.mod
+                  cache: false
+
+            - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+              with:
+                  workspaces: rust
+                  shared-key: ${{ inputs.target == 'desktop' && 'photos-desktop-ensu-android' || 'rust-wasm' }}
+                  cache-targets: false
+                  save-if: false
+
+            - uses: $/.github/actions/restore-rust-target
+              with:
+                  shared-key: ${{ inputs.target == 'desktop' && 'photos-desktop-ensu-android' || 'rust-wasm' }}
+
+            - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+              with:
+                  key: museum-${{ github.sha }}
+                  restore-keys: museum-
+                  path: |
+                      ~/go/pkg/mod
+                      ~/.cache/go-build
+                      ~/.cache/.theseus/postgresql
+
+            - name: Install build and desktop prerequisites
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y build-essential pkg-config libssl-dev libvulkan-dev glslc spirv-headers xvfb dbus gnome-keyring libglib2.0-bin
+                  rustup target add wasm32-unknown-unknown
+
+            - run: npm ci
+              working-directory: web
+
+            - run: npm exec --workspace photos -- playwright install-deps chromium
+              working-directory: web
+
+            - run: npm exec --workspace photos -- playwright install chromium
+              working-directory: web
+              if: inputs.target == 'web'
+
+            - run: npm ci
+              working-directory: desktop
+              if: inputs.target == 'desktop'
+
+            - run: node --test web/scripts/e2e-process.test.mjs
+
+            - name: Test Photos web
+              if: inputs.target == 'web'
+              run: npm run test:e2e:photos -- --target web
+              working-directory: web
+              env:
+                  GITHUB_TOKEN: ${{ github.token }}
+
+            - name: Test Photos desktop
+              if: inputs.target == 'desktop'
+              run: desktop/scripts/e2e-linux.sh
+              env:
+                  GITHUB_TOKEN: ${{ github.token }}
+
+            - name: Upload failure diagnostics
+              if: failure()
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+              with:
+                  name: photos-${{ inputs.target }}-e2e
+                  path: web/e2e-results/${{ inputs.target }}/
+                  retention-days: 7

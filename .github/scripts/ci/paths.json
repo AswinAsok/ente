@@ -106,6 +106,21 @@
         "mobile/**/pubspec.lock",
         "mobile/**/pubspec.yaml"
     ],
+    "photos-desktop-e2e": [
+        ".github/actions/restore-rust-target/**",
+        ".github/workflows/photos-e2e.yml",
+        "desktop/**",
+        "rust/**",
+        "server/**",
+        "web/**"
+    ],
+    "photos-web-e2e": [
+        ".github/actions/restore-rust-target/**",
+        ".github/workflows/photos-e2e.yml",
+        "rust/**",
+        "server/**",
+        "web/**"
+    ],
     "repo-lint": null,
     "rust-cli-test": [
         ".github/actions/restore-rust-target/**",

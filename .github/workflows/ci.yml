@@ -69,6 +69,20 @@ jobs:
         if: ${{ contains(fromJSON(needs.select.outputs.jobs), 'mobile-podfile-lock') }}
         uses: ./.github/workflows/mobile-podfile-lock.yml
 
+    photos-desktop-e2e:
+        needs: select
+        if: ${{ contains(fromJSON(needs.select.outputs.jobs), 'photos-desktop-e2e') }}
+        uses: ./.github/workflows/photos-e2e.yml
+        with:
+            target: desktop
+
+    photos-web-e2e:
+        needs: select
+        if: ${{ contains(fromJSON(needs.select.outputs.jobs), 'photos-web-e2e') }}
+        uses: ./.github/workflows/photos-e2e.yml
+        with:
+            target: web
+
     repo-lint:
         needs: select
         if: ${{ contains(fromJSON(needs.select.outputs.jobs), 'repo-lint') }}
@@ -113,6 +127,8 @@ jobs:
             - infra-lint-staff
             - mobile-lint
             - mobile-podfile-lock
+            - photos-desktop-e2e
+            - photos-web-e2e
             - repo-lint
             - rust-cli-test
             - rust-lint

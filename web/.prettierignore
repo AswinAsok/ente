@@ -1,2 +1,3 @@
 package-lock.json
+e2e-results/
 packages/wasm/*/pkg/**

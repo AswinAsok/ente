@@ -37,6 +37,11 @@ To see the full list of apps you can run (and other scripts that you can use), u
 >
 > If `package-lock.json` has not changed since your last `npm ci`, you can use `npm install` as a faster incremental alternative.
 
+## End-to-end tests
+
+Photos web and desktop share a Playwright scenario backed by local Museum. See
+[E2E testing](docs/e2e.md) for setup, commands, and failure diagnostics.
+
 ## Docker images
 
 A Docker image containing the self-hosting web apps is available from `ghcr.io/ente/web`. See [docs/docker.md](docs/docker.md) for more details.
