@@ -33,6 +33,8 @@ if (
     );
 }
 const cwd = fileURLToPath(new URL("..", import.meta.url));
+const npmCLI = process.env.npm_execpath;
+if (!npmCLI) throw new Error("Run this script through npm run test:e2e");
 let child: ChildProcess | undefined;
 const state = { interrupted: false };
 
@@ -45,8 +47,8 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 
 const commands: [string, string[]][] = [
     ...selected.map((name): [string, string[]] => [
-        "npm",
-        ["run", `build:${name}`],
+        process.execPath,
+        [npmCLI, "run", `build:${name}`],
     ]),
     [
         process.execPath,
