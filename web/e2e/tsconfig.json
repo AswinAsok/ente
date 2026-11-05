@@ -4,6 +4,6 @@
         "types": ["node"],
         "allowImportingTsExtensions": true
     },
-    "include": ["**/*.ts"],
+    "include": ["**/*.ts", "../apps/*/e2e/**/*.ts"],
     "exclude": ["test-results", "playwright-report", ".auth"]
 }

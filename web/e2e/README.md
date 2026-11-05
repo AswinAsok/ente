@@ -11,6 +11,17 @@ npm run test:e2e -- --project=photos
 npm run test:e2e -- --project=locker
 ```
 
+App-specific browser tests live in `web/apps/<app>/e2e/` and use `*.spec.ts`
+filenames. The shared configuration discovers each app's folder as a Playwright
+project. `web/e2e/` contains only common infrastructure: app selection, the build
+runner, static preview server, and account/browser fixtures. Import shared
+fixtures from `../../../e2e/fixtures/test` in an app's tests.
+
+The shared E2E TypeScript check includes all app E2E folders. Each app's E2E
+`tsconfig.json` also uses these shared compiler settings for editor and lint
+support. App Vitest configurations restrict discovery to their existing `tests/`
+folders so `npm test` does not run Playwright specs.
+
 The Rust `with-museum` runner first starts real Museum with temporary PostgreSQL
 and test object storage using `ente-test-support`. PostgreSQL is downloaded and
 cached on first use. Docker and existing Ente accounts are not required.

@@ -10,5 +10,5 @@
         "../../packages/base/global-electron.d.ts",
         "../../packages/base/global-css.d.ts"
     ],
-    "exclude": ["node_modules", "out", ".next", ".next-desktop"]
+    "exclude": ["node_modules", "out", ".next", ".next-desktop", "e2e"]
 }

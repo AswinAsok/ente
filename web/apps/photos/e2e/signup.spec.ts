@@ -1,4 +1,4 @@
-import { expect, test } from "../../fixtures/test";
+import { expect, test } from "../../../e2e/fixtures/test";
 
 test("signs up and opens the Photos gallery", async ({
     signedInPage: page,

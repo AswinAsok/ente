@@ -3,7 +3,6 @@ import { fileURLToPath } from "node:url";
 import { apps, selectedApps } from "./apps.ts";
 
 export default defineConfig({
-    testDir: "./tests",
     outputDir: "./test-results",
     forbidOnly: !!process.env.CI,
     workers: 1,
@@ -22,7 +21,7 @@ export default defineConfig({
     },
     projects: apps.map(({ name, port }) => ({
         name,
-        testDir: `./tests/${name}`,
+        testDir: `../apps/${name}/e2e`,
         use: { baseURL: `http://localhost:${port}` },
     })),
     webServer: selectedApps(process.argv.slice(2)).map(({ name, port }) => ({
