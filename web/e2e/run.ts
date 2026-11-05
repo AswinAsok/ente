@@ -36,7 +36,6 @@ const cwd = fileURLToPath(new URL("..", import.meta.url));
 let child: ChildProcess | undefined;
 const state = { interrupted: false };
 
-// Let the active build or Playwright command shut down before the backend exits.
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.on(signal, () => {
         state.interrupted = true;

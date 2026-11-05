@@ -28,7 +28,6 @@ export const signUp = async (
     await page
         .getByLabel("Confirm password", { exact: true })
         .fill(account.password);
-    // The native checkbox is visually clipped; use its keyboard interaction.
     const terms = page.getByRole("checkbox");
     await terms.press("Space");
     await expect(terms).toBeChecked();

@@ -22,7 +22,6 @@ fn main() -> TestResult {
                 )
                 .env("ENTE_TEST_EMAIL_CODE", ente_test_support::HARDCODED_OTT)
                 .kill_on_drop(true);
-            // Keep the test command and its servers in a separate process group.
             #[cfg(unix)]
             command.process_group(0);
             let mut child = command.spawn()?;
@@ -65,7 +64,6 @@ async fn interrupted() -> std::io::Result<()> {
 async fn stop(child: &mut Child) -> TestResult {
     #[cfg(unix)]
     if let Some(pid) = child.id() {
-        // Playwright handles SIGINT by stopping its frontend servers.
         let _ = Command::new("kill")
             .args(["-INT", "--", &format!("-{pid}")])
             .status()
