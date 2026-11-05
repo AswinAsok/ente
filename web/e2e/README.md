@@ -37,8 +37,10 @@ directories using the repo's existing Vite preview tooling:
 Photos on port 3300 and Locker on port 3309. Only those ports must be free.
 Without `--project`, both apps are built, started, and tested. For example,
 `--project=locker` runs only `npm run build:locker` and serves only Locker.
-The spaced form (`--project locker`), repeated options, and wildcard project names
-are also supported. Unknown projects fail before any app builds.
+The spaced form (`--project locker`) is also supported. Select one exact app name;
+wildcards and multiple project selections are not supported. Unknown names and
+repeated project options fail before any app builds. The runner reads the app
+selection once and passes it to Playwright through `ENTE_E2E_PROJECT`.
 Each test signs up a unique account through the UI against the isolated backend.
 Browser contexts are isolated, and backend data is removed after the run.
 

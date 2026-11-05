@@ -1,9 +1,29 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { selectedApps } from "./apps.ts";
+import { parseArgs } from "node:util";
+import { apps } from "./apps.ts";
 
 const args = process.argv.slice(2);
-const selected = selectedApps(args);
+const { values } = parseArgs({
+    args,
+    options: { project: { type: "string", multiple: true } },
+    strict: false,
+    allowPositionals: true,
+});
+const projects = values.project ?? [];
+if (projects.length > 1)
+    throw new Error("Select only one --project, or omit it to test all apps");
+const project = projects[0];
+if (
+    project !== undefined &&
+    (typeof project !== "string" || !Object.hasOwn(apps, project))
+) {
+    throw new Error("Expected --project=photos or --project=locker");
+}
+const selected = Object.keys(apps).filter(
+    (name) => project === undefined || name === project,
+);
+const env = { ...process.env, ENTE_E2E_PROJECT: project ?? "" };
 if (
     !process.env.NEXT_PUBLIC_ENTE_ENDPOINT ||
     !process.env.ENTE_TEST_EMAIL_CODE
@@ -25,7 +45,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 }
 
 const commands: [string, string[]][] = [
-    ...selected.map(({ name }): [string, string[]] => [
+    ...selected.map((name): [string, string[]] => [
         "npm",
         ["run", `build:${name}`],
     ]),
@@ -43,7 +63,7 @@ const commands: [string, string[]][] = [
 
 for (const [command, commandArgs] of commands) {
     const status = await new Promise<number>((resolve, reject) => {
-        child = spawn(command, commandArgs, { cwd, stdio: "inherit" });
+        child = spawn(command, commandArgs, { cwd, env, stdio: "inherit" });
         child.once("error", reject);
         child.once("close", (code, signal) => {
             resolve(code ?? (signal === "SIGINT" ? 130 : 1));

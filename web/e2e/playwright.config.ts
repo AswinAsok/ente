@@ -1,6 +1,11 @@
 import { defineConfig, devices } from "@playwright/test";
 import { fileURLToPath } from "node:url";
-import { apps, selectedApps } from "./apps.ts";
+import { apps } from "./apps.ts";
+
+const selected = Object.entries(apps).filter(
+    ([name]) =>
+        !process.env.ENTE_E2E_PROJECT || name === process.env.ENTE_E2E_PROJECT,
+);
 
 export default defineConfig({
     outputDir: "./test-results",
@@ -19,12 +24,12 @@ export default defineConfig({
         trace: "retain-on-failure",
         screenshot: "only-on-failure",
     },
-    projects: apps.map(({ name, port }) => ({
+    projects: selected.map(([name, { port }]) => ({
         name,
         testDir: `../apps/${name}/e2e`,
         use: { baseURL: `http://localhost:${port}` },
     })),
-    webServer: selectedApps(process.argv.slice(2)).map(({ name, port }) => ({
+    webServer: selected.map(([name, { port }]) => ({
         command: `node e2e/serve.ts ${name}`,
         cwd: fileURLToPath(new URL("..", import.meta.url)),
         url: `http://localhost:${port}/signup`,
