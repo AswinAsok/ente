@@ -1,12 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 import { fileURLToPath } from "node:url";
-
-const endpoint = process.env.NEXT_PUBLIC_ENTE_ENDPOINT ?? "";
-
-const apps = [
-    { name: "photos", port: 3300 },
-    { name: "locker", port: 3309 },
-];
+import { apps, selectedApps } from "./apps.ts";
 
 export default defineConfig({
     testDir: "./tests",
@@ -31,11 +25,10 @@ export default defineConfig({
         testDir: `./tests/${name}`,
         use: { baseURL: `http://localhost:${port}` },
     })),
-    webServer: apps.map(({ name, port }) => ({
-        command: `npm exec --workspace ${name} -- next dev --webpack -p ${port}`,
+    webServer: selectedApps(process.argv.slice(2)).map(({ name, port }) => ({
+        command: `node e2e/serve.ts ${name}`,
         cwd: fileURLToPath(new URL("..", import.meta.url)),
         url: `http://localhost:${port}/signup`,
-        env: { NEXT_PUBLIC_ENTE_ENDPOINT: endpoint },
         reuseExistingServer: false,
         timeout: 180_000,
     })),

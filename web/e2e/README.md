@@ -11,14 +11,23 @@ npm run test:e2e -- --project=photos
 npm run test:e2e -- --project=locker
 ```
 
-The command builds the required WASM packages once, then the Rust `with-museum`
-runner starts real Museum with temporary PostgreSQL and test object storage using
-`ente-test-support`. PostgreSQL is downloaded and cached on first use. Docker and
-existing Ente accounts are not required.
+The Rust `with-museum` runner first starts real Museum with temporary PostgreSQL
+and test object storage using `ente-test-support`. PostgreSQL is downloaded and
+cached on first use. Docker and existing Ente accounts are not required.
 
 The runner passes `NEXT_PUBLIC_ENTE_ENDPOINT` and the test-only email code/domain
-to Playwright. Playwright starts fresh Photos and Locker development servers on
-ports 3300 and 3309; both must be free, including when selecting just one project.
+to `run.ts`, which calls the existing `npm run build:photos` and/or
+`npm run build:locker` commands sequentially. These commands build the required
+WASM and export the production Next.js apps. Museum must start before building
+because Next.js embeds `NEXT_PUBLIC_ENTE_ENDPOINT` in the browser bundles.
+
+Playwright then serves only the selected apps' generated `apps/<app>/out/`
+directories using the repo's existing Vite preview tooling:
+Photos on port 3300 and Locker on port 3309. Only those ports must be free.
+Without `--project`, both apps are built, started, and tested. For example,
+`--project=locker` runs only `npm run build:locker` and serves only Locker.
+The spaced form (`--project locker`), repeated options, and wildcard project names
+are also supported. Unknown projects fail before any app builds.
 Each test signs up a unique account through the UI against the isolated backend.
 Browser contexts are isolated, and backend data is removed after the run.
 
