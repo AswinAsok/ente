@@ -26,5 +26,4 @@ cargo run -p ente-test-support --bin with-museum -- <command> [args...]
 
 The command inherits the working directory and standard streams. Backend resources
 are cleaned up after it exits; a failed command retains Museum's diagnostic
-directory. Web browser tests use this runner; see `web/e2e/README.md` at the
-repository root.
+directory. Web browser tests also use this runner.
