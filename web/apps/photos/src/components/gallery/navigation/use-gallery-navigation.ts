@@ -1,6 +1,4 @@
-import { PseudoCollectionID } from "ente-new/photos/services/collection-summary";
 import type { SidebarActionID } from "ente-new/photos/services/search/types";
-import { useRouter } from "next/router";
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import type { useGalleryLibrary } from "../hooks/use-gallery-library";
 import { useGalleryPreferences } from "../hooks/use-gallery-preferences";
@@ -17,6 +15,7 @@ import {
     initialNavigationState,
     navigationReducer,
 } from "./navigation-state";
+import { useGalleryRoute } from "./use-gallery-route";
 
 export const useGalleryNavigation = (
     libraryOwner: ReturnType<typeof useGalleryLibrary>,
@@ -150,6 +149,7 @@ export const useGalleryNavigation = (
         selectSearchOption,
         showCleanupView,
     ]);
+    useGalleryRoute(state, send, library, authenticateUser);
     useEffect(() => {
         const resolve = sectionDefinition(destination.section).resolve;
         const resolved = resolve?.(library, destination);
@@ -170,23 +170,6 @@ export const useGalleryNavigation = (
             });
         }
     }, [joinedCollectionID, library]);
-    const router = useRouter();
-    const overview = destination.albumFilter !== undefined;
-    useEffect(() => {
-        if (
-            !library.user ||
-            (!overview && activeCollectionID === undefined) ||
-            !router.isReady
-        )
-            return;
-        const query =
-            !overview && activeCollectionID !== PseudoCollectionID.all
-                ? `?collection=${activeCollectionID}`
-                : "";
-        const href = `/gallery${query}`;
-        if (router.asPath !== href)
-            void router.push(href, undefined, { shallow: true });
-    }, [activeCollectionID, overview, router, library.user]);
     return {
         state,
         sectionID,

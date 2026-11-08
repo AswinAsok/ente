@@ -37,6 +37,7 @@ export const initialNavigationState: GalleryNavigationState = {
 };
 
 export type NavigationAction =
+    | { type: "restoreDestination"; destination: GalleryDestination }
     | { type: "openSection"; section: GallerySectionID }
     | { type: "showCleanup"; section: "duplicates" | "large-files" }
     | { type: "dismissCleanup" }
@@ -80,6 +81,8 @@ export const navigationReducer = (
         overlay: undefined,
     });
     switch (action.type) {
+        case "restoreDestination":
+            return navigate(action.destination);
         case "openSection":
             return navigate({ section: action.section });
         case "showCleanup":
