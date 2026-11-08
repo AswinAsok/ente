@@ -65,10 +65,10 @@
             "shell-quote": "1.11.0"
         },
         "micromark-extension-math": {
-            "katex": "0.18.2"
+            "katex": "0.18.8"
         },
         "rehype-katex": {
-            "katex": "0.18.2"
+            "katex": "0.18.8"
         }
     },
     "devDependencies": {
