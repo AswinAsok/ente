@@ -8,8 +8,21 @@ permissions:
 
 jobs:
     test:
+        name: Test (${{ matrix.suite }})
         runs-on: ubuntu-latest
         timeout-minutes: 30
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - suite: photos
+                      projects: --project photos
+                      next-cache: web/apps/photos/.next/cache
+                    - suite: locker-share
+                      projects: --project locker --project share
+                      next-cache: |
+                          web/apps/locker/.next/cache
+                          web/apps/share/.next/cache
         defaults:
             run:
                 working-directory: web
@@ -55,12 +68,42 @@ jobs:
                       ~/.cache/go-build
                       ~/.cache/.theseus/postgresql
 
-            - run: npm ci
+            - name: Identify WASM toolchain
+              id: wasm-toolchain
+              run: echo "version=$(rustc --version | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
-            - run: npm exec -- playwright install --with-deps chromium
+            - name: Restore generated E2E WASM
+              id: wasm
+              uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+              with:
+                  key: >-
+                      e2e-wasm-${{ runner.os }}-${{ runner.arch }}-${{ steps.wasm-toolchain.outputs.version }}-${{
+                      hashFiles('rust/Cargo.toml', 'rust/Cargo.lock', 'rust/.cargo/**', 'rust/crates/**',
+                      'rust/bindings/wasm/lib/**', 'rust/bindings/wasm/prelogin/**',
+                      'rust/bindings/wasm/photos/**', 'rust/bindings/wasm/locker/**',
+                      'web/package.json', 'web/package-lock.json', 'web/packages/wasm/*/package.json') }}
+                  path: |
+                      web/packages/wasm/prelogin/pkg
+                      web/packages/wasm/photos/pkg
+                      web/packages/wasm/locker/pkg
 
-            - run: npm run test:e2e
+            - name: Restore Next.js cache
+              uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+              with:
+                  key: e2e-next-${{ matrix.suite }}-${{ hashFiles('web/package-lock.json') }}-${{ github.sha }}
+                  restore-keys: e2e-next-${{ matrix.suite }}-${{ hashFiles('web/package-lock.json') }}-
+                  path: ${{ matrix.next-cache }}
+
+            - run: npm ci --prefer-offline --no-audit --no-fund
+
+            - run: npm exec -- playwright install --with-deps --only-shell chromium
+
+            - run: npm run test:e2e -- $PROJECTS
               env:
+                  PROJECTS: ${{ matrix.projects }}
+                  # The cache warmer builds against the same endpoint.
+                  ENTE_TEST_MUSEUM_PORT: "3310"
+                  ENTE_E2E_WASM_CACHE_HIT: ${{ steps.wasm.outputs.cache-hit }}
                   GITHUB_TOKEN: ${{ github.token }}
                   TMPDIR: ${{ runner.temp }}
 
@@ -78,7 +121,7 @@ jobs:
               if: failure()
               uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
               with:
-                  name: web-e2e-failure
+                  name: web-e2e-failure-${{ matrix.suite }}
                   path: |
                       web/e2e/playwright-report
                       web/e2e/test-results

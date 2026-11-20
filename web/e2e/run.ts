@@ -11,21 +11,18 @@ const { values } = parseArgs({
     allowPositionals: true,
 });
 const projects = values.project ?? [];
-if (projects.length > 1)
-    throw new Error("Select only one --project, or omit it to test all apps");
-const project = projects[0];
+const appNames = Object.keys(apps);
 if (
-    project !== undefined &&
-    (typeof project !== "string" || !Object.hasOwn(apps, project))
+    projects.some(
+        (name) => typeof name !== "string" || !Object.hasOwn(apps, name),
+    )
 ) {
-    throw new Error(
-        `Expected --project to be one of: ${Object.keys(apps).join(", ")}`,
-    );
+    throw new Error(`Expected --project to be one of: ${appNames.join(", ")}`);
 }
-const selected = Object.keys(apps).filter(
-    (name) => project === undefined || name === project,
+const selected = appNames.filter(
+    (name) => !projects.length || projects.includes(name),
 );
-const env = { ...process.env, ENTE_E2E_PROJECT: project ?? "" };
+const env = { ...process.env, ENTE_E2E_PROJECTS: selected.join(",") };
 if (
     !process.env.NEXT_PUBLIC_ENTE_ENDPOINT ||
     !process.env.ENTE_TEST_EMAIL_CODE
@@ -47,26 +44,35 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     });
 }
 
-const commands: [string, string[]][] = [
-    ...appServersFor(selected).map((name): [string, string[]] => [
-        process.execPath,
-        [npmCLI, "run", `build:${name}`],
-    ]),
+const servers = appServersFor(selected);
+const wasmBuilds =
+    process.env.ENTE_E2E_WASM_CACHE_HIT === "true"
+        ? []
+        : [
+              "build:prelogin-wasm",
+              ...servers
+                  .filter((name) => name !== "share")
+                  .map((name) => `build:${name}-wasm`),
+          ];
+const builds = [...wasmBuilds, ...servers.map((name) => `build:${name}:app`)];
+const commands = [
+    ...builds.map((script) => [npmCLI, "run", script]),
     [
-        process.execPath,
-        [
-            "node_modules/playwright/cli.js",
-            "test",
-            "--config",
-            "e2e/playwright.config.ts",
-            ...args,
-        ],
+        "node_modules/playwright/cli.js",
+        "test",
+        "--config",
+        "e2e/playwright.config.ts",
+        ...args,
     ],
 ];
 
-for (const [command, commandArgs] of commands) {
+for (const commandArgs of commands) {
     const status = await new Promise<number>((resolve, reject) => {
-        child = spawn(command, commandArgs, { cwd, env, stdio: "inherit" });
+        child = spawn(process.execPath, commandArgs, {
+            cwd,
+            env,
+            stdio: "inherit",
+        });
         child.once("error", reject);
         child.once("close", (code, signal) => {
             resolve(code ?? (signal === "SIGINT" ? 130 : 1));

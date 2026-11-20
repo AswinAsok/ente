@@ -188,7 +188,7 @@ jobs:
               working-directory: mobile
 
     web:
-        # For web-lint.yml.
+        # For web-lint.yml and web-e2e.yml.
         runs-on: ubuntu-latest
         defaults:
             run:
@@ -225,8 +225,9 @@ jobs:
                   key: cast-toolchain-${{ hashFiles('rust/bindings/wasm/cast/rust-toolchain.toml') }}
                   path: ~/.rustup/toolchains/nightly-*
 
-            - name: Cache web
-              uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+            - name: Restore web lint cache
+              id: web-cache
+              uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
               with:
                   key: web-${{ github.sha }}
                   restore-keys: web-
@@ -242,7 +243,39 @@ jobs:
 
             - run: npm run build:wasm
 
+            - name: Identify WASM toolchain
+              id: wasm-toolchain
+              run: echo "version=$(rustc --version | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+            - name: Save generated E2E WASM
+              uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+              with:
+                  key: >-
+                      e2e-wasm-${{ runner.os }}-${{ runner.arch }}-${{ steps.wasm-toolchain.outputs.version }}-${{
+                      hashFiles('rust/Cargo.toml', 'rust/Cargo.lock', 'rust/.cargo/**', 'rust/crates/**',
+                      'rust/bindings/wasm/lib/**', 'rust/bindings/wasm/prelogin/**',
+                      'rust/bindings/wasm/photos/**', 'rust/bindings/wasm/locker/**',
+                      'web/package.json', 'web/package-lock.json', 'web/packages/wasm/*/package.json') }}
+                  path: |
+                      web/packages/wasm/prelogin/pkg
+                      web/packages/wasm/photos/pkg
+                      web/packages/wasm/locker/pkg
+
             - run: npm exec --workspaces -- tsc --incremental
+
+            - name: Save web lint cache
+              if: steps.web-cache.outputs.cache-hit != 'true'
+              uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+              with:
+                  key: ${{ steps.web-cache.outputs.cache-primary-key }}
+                  path: |
+                      web/apps/photos/.next/cache
+                      web/apps/*/*.tsbuildinfo
+                      web/packages/*/*.tsbuildinfo
+                      web/packages/wasm/*/*.tsbuildinfo
+
+            # Save the same native build that npm run test:e2e requests.
+            - run: cargo build --locked --manifest-path ../rust/Cargo.toml -p ente-test-support --bin with-museum
 
             - run: node .github/actions/restore-rust-target/mtimes.mjs save
               working-directory: ${{ github.workspace }}
@@ -253,6 +286,28 @@ jobs:
               with:
                   key: ${{ steps.rust-target.outputs.cache-key }}
                   path: rust/target
+
+            - name: Build apps for E2E cache
+              run: |
+                  npm run build:photos:app
+                  npm run build:locker:app
+                  npm run build:share:app
+              env:
+                  NEXT_PUBLIC_ENTE_ENDPOINT: http://127.0.0.1:3310
+
+            - name: Save Photos Next.js cache
+              uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+              with:
+                  key: e2e-next-photos-${{ hashFiles('web/package-lock.json') }}-${{ github.sha }}
+                  path: web/apps/photos/.next/cache
+
+            - name: Save Locker and Share Next.js caches
+              uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+              with:
+                  key: e2e-next-locker-share-${{ hashFiles('web/package-lock.json') }}-${{ github.sha }}
+                  path: |
+                      web/apps/locker/.next/cache
+                      web/apps/share/.next/cache
 
     photos-desktop-ensu-android:
         # For desktop-lint.yml and android-lint.yml.

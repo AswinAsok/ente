@@ -8,8 +8,13 @@ use tokio::process::{Child, Command};
 fn main() -> TestResult {
     let mut args = std::env::args_os().skip(1);
     let command = args.next().ok_or("expected a command to run")?;
+    let port = match std::env::var("ENTE_TEST_MUSEUM_PORT") {
+        Ok(port) => Some(port.parse()?),
+        Err(std::env::VarError::NotPresent) => None,
+        Err(error) => return Err(error.into()),
+    };
 
-    Museum::run(|museum| {
+    Museum::run_with_port(port, |museum| {
         eprintln!("Test Museum ready at {}", museum.endpoint());
         tokio::runtime::Runtime::new()?.block_on(async {
             let mut command = Command::new(command);

@@ -2,16 +2,16 @@ import { defineConfig, devices } from "@playwright/test";
 import { fileURLToPath } from "node:url";
 import { apps, appServersFor } from "./apps.ts";
 
+const projects = process.env.ENTE_E2E_PROJECTS?.split(",");
 const selected = Object.entries(apps).filter(
-    ([name]) =>
-        !process.env.ENTE_E2E_PROJECT || name === process.env.ENTE_E2E_PROJECT,
+    ([name]) => !projects || projects.includes(name),
 );
 const servers = appServersFor(selected.map(([name]) => name));
 
 export default defineConfig({
     outputDir: "./test-results",
     forbidOnly: !!process.env.CI,
-    workers: 1,
+    workers: process.env.CI ? 2 : 1,
     retries: 0,
     timeout: 120_000,
     expect: { timeout: 30_000 },
