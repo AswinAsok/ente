@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { appNames, apps, appServersFor } from "./apps.ts";
+import { apps, appServersFor } from "./apps.ts";
 
 const args = process.argv.slice(2);
 const { values } = parseArgs({
@@ -11,6 +11,7 @@ const { values } = parseArgs({
     allowPositionals: true,
 });
 const projects = values.project ?? [];
+const appNames = Object.keys(apps);
 if (
     projects.some(
         (name) => typeof name !== "string" || !Object.hasOwn(apps, name),
