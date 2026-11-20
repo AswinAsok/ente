@@ -1,6 +1,8 @@
 use std::{
     fs,
     future::Future,
+    net::TcpListener,
+    num::NonZeroU16,
     path::{Path, PathBuf},
 };
 
@@ -32,7 +34,22 @@ impl Museum {
         env: &[(&str, &str)],
         test: impl FnOnce(&Self) -> TestResult,
     ) -> TestResult {
-        let mut museum = Self::start(env)?;
+        Self::run_with_options(env, None, test)
+    }
+
+    pub fn run_with_port(
+        port: Option<NonZeroU16>,
+        test: impl FnOnce(&Self) -> TestResult,
+    ) -> TestResult {
+        Self::run_with_options(&[], port, test)
+    }
+
+    fn run_with_options(
+        env: &[(&str, &str)],
+        port: Option<NonZeroU16>,
+        test: impl FnOnce(&Self) -> TestResult,
+    ) -> TestResult {
+        let mut museum = Self::start(env, port)?;
         match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| test(&museum))) {
             Ok(Ok(())) => Ok(()),
             Ok(Err(error)) => {
@@ -54,10 +71,16 @@ impl Museum {
         Self::run(|museum| tokio::runtime::Runtime::new()?.block_on(test(museum.endpoint.clone())))
     }
 
-    fn start(env: &[(&str, &str)]) -> TestResult<Self> {
+    fn start(env: &[(&str, &str)], port: Option<NonZeroU16>) -> TestResult<Self> {
+        let museum_port = match port {
+            Some(port) => {
+                TcpListener::bind((LOCAL_HOST, port.get()))?;
+                port.get()
+            }
+            None => free_port()?,
+        };
         let server_dir = server_dir()?;
         let mut temp_dir = TempDir::new("ente-test")?;
-        let museum_port = free_port()?;
         let endpoint = format!("http://{LOCAL_HOST}:{museum_port}");
         let museum_config_file = temp_dir.path().join("museum.yaml");
         let museum_bin = temp_dir.path().join("museum");

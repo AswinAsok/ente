@@ -4,6 +4,8 @@ export const apps = {
     share: { port: 3305, readyPath: "/" },
 } as const;
 
+export const appNames = Object.keys(apps) as (keyof typeof apps)[];
+
 export const appServersFor = (projects: readonly string[]) =>
     projects.includes("share") && !projects.includes("locker")
         ? [...projects, "locker"]
